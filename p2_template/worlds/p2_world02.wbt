@@ -1,0 +1,92 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/robots/k-team/khepera4/protos/Khepera4.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/appearances/protos/Roughcast.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/apartment_structure/protos/Wall.proto"
+
+WorldInfo {
+  info [
+    "Rob Square"
+  ]
+  title "Rob Square"
+  basicTimeStep 16
+  coordinateSystem "NUE"
+}
+Viewpoint {
+  orientation -0.7071057814660383 0.7071077809056434 5.55111512313688e-17 3.1415966524690035
+  position 0.07846138706271422 4.865884926378425 0.055498980629481776
+}
+TexturedBackground {
+  texture "mars"
+  skybox FALSE
+}
+TexturedBackgroundLight {
+  castShadows FALSE
+}
+RectangleArena {
+  translation 0.0133855 0 0.22826
+  rotation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0943951023931953
+  floorSize 3 3
+}
+Wall {
+  translation 0.51 0.05 -1.27
+  rotation 0 1 0 0
+  size 2 0.1 0.5
+}
+Wall {
+  translation 0.51 0.05 0.73
+  rotation 0 1 0 0
+  name "wall(1)"
+  size 2 0.1 1
+}
+Wall {
+  translation -1.36 0.05 -0.52
+  rotation 0 1 0 0
+  name "wall(2)"
+  size 0.25 0.1 1.5
+}
+Wall {
+  translation -0.86 0.05 -0.52
+  rotation 0 1 0 0
+  name "wall(5)"
+  size 0.25 0.1 1.25
+}
+Wall {
+  translation -1.36 0.05 -0.77
+  rotation 0 1 0 0
+  name "wall(4)"
+  size 0.25 0.1 1.75
+}
+Wall {
+  translation 0.89 0.05 -0.77
+  rotation 0 1 0 0
+  name "wall(3)"
+  size 1.25 0.1 1.5
+}
+Wall {
+  translation -0.99 0.05 -0.27
+  rotation 0 1 0 0
+  name "wall(6)"
+  size 0.5 0.1 0.5
+}
+Khepera4 {
+  hidden translation_1 0 0.0527 0.021
+  hidden translation_2 0 -0.0527 0.021
+  translation -1.1102399999999897 -8.02626795266756e-05 -1.1430500000000003
+  rotation 0.5773492479634842 0.5773507795905725 0.5773507800134656 -2.0943966348674223
+  controller "<extern>"
+}
+DEF Object Wall {
+  translation -1.24602 0.0499963 0.354009
+  rotation 2.560909999991428e-06 -0.9999999999966527 -3.694309999987634e-07 -1.5708053071795867
+  name "Object"
+  size 0.25 0.1 0.25
+  appearance Roughcast {
+    colorOverride 1 1 0
+    textureTransform TextureTransform {
+    }
+  }
+}
