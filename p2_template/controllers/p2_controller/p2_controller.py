@@ -31,6 +31,20 @@ UNEXPLORED = -1
 BASE = 0
 WALL = -2
 
+#robot
+#Orientaciones
+UP = 0
+UPR = 1
+R = 2 
+DOWNR = 3
+DOWN = 4
+DOWNL = 5
+L = 6
+UPL = 7
+
+#Tolerancia de deteccion
+DETECT_TOL = 0
+
 # Nombres de los sensores de distancia basados en infrarrojo.
 INFRARED_SENSORS_NAMES = [
     "rear left infrared sensor",
@@ -155,48 +169,62 @@ def initialization():
 
     return robot, leftWheel, rightWheel, irSensorList, posL, posR, camera
 
+#Objeto que representa el estado del robot y contiene funciones de alto nivel para emplearlo
+class RobotAPI():
+    def __init__(self):
+        self.pos = (WORLD_ROWS, WORLD_COLS)
+        self.orientation = 0
+        
+    def look(self, direction):
+        if not (0 <= direction < 8):
+            raise ValueError("Invalid direction")
+        self.orientation = direction
+        #Implementar control del robot
+
+
 #Modulos de comportamiento.
 # Clase que decide la siguiente accion del robot.
 class Director:
     def __init__(self):
         pass
 
-    def take_action():
+    def plan_action(self, robot, map, controller):
         pass
 
 # Clase que se encarga de controlar el movimiento del robot.
 class Controller:
     def __init__(self, director):
         pass
-    def act():
+    
+    def act(self, map):
         pass
 
 
 # Clase que se encarga de generar el mapa en memoría y actualizarlo.
-class Mapper:
+class Map:
     def __init__(self, director):
-        map = np.full((WORLD_ROWS*2-1, WORLD_COLS*2-1), UNEXPLORED)
-        map[WORLD_COLS,WORLD_ROWS] = 0
-
+        self.map = np.full((WORLD_ROWS*2-1, WORLD_COLS*2-1), UNEXPLORED)
+        self.map[WORLD_COLS,WORLD_ROWS] = 0
 
     def update():
         pass
-
+    
+    def getmap(self):
+        return self.map
 if __name__ == "__main__":
 
     #Inializacion de los parametros del robot KeperaIV en webbots
     initialization()
 
     #Inializacion de los modulos de comportamiento del robot.
+    robot = RobotAPI()
     controller = Controller()
     director = Director()
-    mapper = Mapper()
+    map = Map()
 
      #Loop infinito
     while(True):
-        #Actualizar el mapa
-        mapper.update()
         #Decidir accion a tomar
-        director.take_action()
+        director.plan_action(robot=robot, map=map, controller=controller)
         #Ejecutar la accion
-        controller.act()
+        controller.act(map=map)
