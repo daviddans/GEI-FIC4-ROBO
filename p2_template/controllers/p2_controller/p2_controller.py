@@ -8,7 +8,7 @@
 #########################################################################################
 import time
 from controller import Robot, Supervisor
-
+from enum import Enum
 import time  # Si queremos utilizar time.sleep().
 import numpy as np  # Si queremos utilizar numpy para procesar la imagen.
 import cv2  # Si queremos utilizar OpenCV para procesar la imagen.
@@ -22,6 +22,14 @@ MAX_SPEED = 47.6
 CRUISE_SPEED = 8
 # Time step por defecto para el controlador.
 TIME_STEP = 32
+
+#CONSTANTES
+#mapa
+WORLD_ROWS = 12
+WORLD_COLS = 12
+UNEXPLORED = -1
+BASE = 0
+WALL = -2
 
 # Nombres de los sensores de distancia basados en infrarrojo.
 INFRARED_SENSORS_NAMES = [
@@ -147,18 +155,48 @@ def initialization():
 
     return robot, leftWheel, rightWheel, irSensorList, posL, posR, camera
 
+#Modulos de comportamiento.
+# Clase que decide la siguiente accion del robot.
+class Director:
+    def __init__(self):
+        pass
+
+    def take_action():
+        pass
+
+# Clase que se encarga de controlar el movimiento del robot.
+class Controller:
+    def __init__(self, director):
+        pass
+    def act():
+        pass
+
+
+# Clase que se encarga de generar el mapa en memoría y actualizarlo.
+class Mapper:
+    def __init__(self, director):
+        map = np.full((WORLD_ROWS*2-1, WORLD_COLS*2-1), UNEXPLORED)
+        map[WORLD_COLS,WORLD_ROWS] = 0
+
+
+    def update():
+        pass
 
 if __name__ == "__main__":
 
+    #Inializacion de los parametros del robot KeperaIV en webbots
     initialization()
-    # Mover el robot 250mm en línea recta con una 'velocidad' de 10.
-    move_distance_position(
-        increment=250 / WHEEL_RADIUS,
-        velocity=10,
-        timeStep=timeStep,
-        robot=robot,
-        leftWheel=leftWheel,
-        rightWheel=rightWheel,
-        posL=posL,
-        posR=posR,
-    )
+
+    #Inializacion de los modulos de comportamiento del robot.
+    controller = Controller()
+    director = Director()
+    mapper = Mapper()
+
+     #Loop infinito
+    while(True):
+        #Actualizar el mapa
+        mapper.update()
+        #Decidir accion a tomar
+        director.take_action()
+        #Ejecutar la accion
+        controller.act()
