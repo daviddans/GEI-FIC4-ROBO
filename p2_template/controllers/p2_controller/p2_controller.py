@@ -43,18 +43,19 @@ L = 6
 UPL = 7
 
 #Tolerancia de deteccion
-DETECT_TOL = 0
+DETECT_TOL = 10
 
 # Nombres de los sensores de distancia basados en infrarrojo.
+# Ordeneinos como as orientacións do robot para facilitar a actualización do mapa.
 INFRARED_SENSORS_NAMES = [
-    "rear left infrared sensor",
-    "left infrared sensor",
-    "front left infrared sensor",
     "front infrared sensor",
     "front right infrared sensor",
     "right infrared sensor",
     "rear right infrared sensor",
     "rear infrared sensor",
+    "rear left infrared sensor",
+    "left infrared sensor",
+    "front left infrared sensor",
 ]
 
 
@@ -189,7 +190,43 @@ class Director:
         pass
 
     def plan_action(self, robot, map, controller):
-        pass
+        r, c = robot.pos
+        deltas = [
+            (-1, 0),  # UP
+            (-1, 1),  # UPR
+            (0, 1),   # R
+            (1, 1),   # DOWNR
+            (1, 0),   # DOWN
+            (1, -1),  # DOWNL
+            (0, -1),  # L
+            (-1, -1)  # UPL
+        ]
+        
+        # Chekear en que direccions hai muros
+        directions_with_walls = []
+        #d sirve como acumulador e indica a dirección que se está comprobando (mesma notación que nas variables gloabais)
+        for d in range(8):
+            dr, dc = deltas[d]
+            nr = r + dr
+            nc = c + dc
+            if 0 <= nr < WORLD_ROWS * 2 - 1 and 0 <= nc < WORLD_COLS * 2 - 1:
+                if map.getmap()[nr, nc] == WALL:
+                    directions_with_walls.append(d)
+        
+        # Calcular esquerda
+        left_dir = (robot.orientation - 2) % 8
+        
+        if left_dir in directions_with_walls:
+            # Muro na esquerda, seguir avanzando
+            controller.action = 'move_forward'
+        elif directions_with_walls:
+            # No hai muro na esquerda, pero si hai muros
+            target_d = directions_with_walls[0]
+            new_orientation = (target_d + 2) % 8
+            # O Controllador debería facer robot.look(new_orientation)
+        else:
+            # Non hai muros ao redor, acción???
+
 
 # Clase que se encarga de controlar el movimiento del robot.
 class Controller:
@@ -206,15 +243,35 @@ class Map:
         self.map = np.full((WORLD_ROWS*2-1, WORLD_COLS*2-1), UNEXPLORED)
         self.map[WORLD_COLS,WORLD_ROWS] = 0
 
-    def update():
-        pass
+def update(self, irSensorList, robot):
+        r, c = robot.pos
+        deltas = [
+            (-1, 0),  # UP
+            (-1, 1),  # UPR
+            (0, 1),   # R
+            (1, 1),   # DOWNR
+            (1, 0),   # DOWN
+            (1, -1),  # DOWNL
+            (0, -1),  # L
+            (-1, -1)  # UPL
+        ]
+        for i in range(8):
+            value = irSensorList[i].getValue()
+            if value > DETECT_TOL:
+                direction = (i + robot.orientation) % 8
+                dr, dc = deltas[direction]
+                nr = r + dr #Posición na que está o muro como a posición do robot + o incremento correspondente á dirección do sensor
+                nc = c + dc
+                if 0 <= nr < WORLD_ROWS * 2 - 1 and 0 <= nc < WORLD_COLS * 2 - 1:
+                    self.map[nr, nc] = WALL
+        
     
     def getmap(self):
         return self.map
 if __name__ == "__main__":
 
-    #Inializacion de los parametros del robot KeperaIV en webbots
-    initialization()
+    #Inializacion de los parametros del robot KeperaIV en webbots e toma de variables
+    kepir, lWheel, rWheel, irSensorList, leftWheelPos, rightWheelPos, camera = initialization()
 
     #Inializacion de los modulos de comportamiento del robot.
     robot = RobotAPI()
@@ -224,6 +281,7 @@ if __name__ == "__main__":
 
      #Loop infinito
     while(True):
+        map.update(irSensorList, robot)
         #Decidir accion a tomar
         director.plan_action(robot=robot, map=map, controller=controller)
         #Ejecutar la accion
