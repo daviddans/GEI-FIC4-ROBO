@@ -1,19 +1,26 @@
 ---
-config:
-  layout: elk
+title: Controler State Diagram
 ---
-stateDiagram
+stateDiagram-v2
   direction LR
+
+  [*] --> s1
+
+  state "DeQueueAction" as s1
+  state "ExecuteAction" as s2
+  state "SaveExitStatus" as s10
+
   state s5 <<choice>>
   state s12 <<choice>>
-  [*] --> s1
-  s1 --> s5:Is queue Empty ?
-  s5 --> s2:No
+
+  s1 --> s5 : Is queue empty?
+
+  s5 --> s2 : No
+  s5 --> s10 : Yes
+
+  s2 --> s12 : Successful?
+
+  s12 --> s1 : Yes
+  s12 --> s10 : No
+
   s10 --> [*]
-  s5 --> s10:Yes
-  s2 --> s12:Succesfull?
-  s12 --> s1:Yes
-  s12 --> s10:No
-  s1:DeQueueAction
-  s2:ExecuteAction
-  s10:SaveExitStatus

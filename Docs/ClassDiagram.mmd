@@ -1,0 +1,48 @@
+---
+title: Class Diagram
+---
+classDiagram
+  direction TB
+
+  class Map {
+    -ndarray map
+    +update(irSensorList, robot)
+    +mark_explored(pos)
+    +getmap() ndarray
+  }
+
+  class RobotAPI {
+    +tuple pos
+    +int orientation
+    -webots_robot
+    -leftWheel
+    -rightWheel
+    -posL
+    -posR
+    +look(direction)
+    +update_position(orientation)
+  }
+
+  class Director {
+    +plan_action(robot, map, controller)
+  }
+
+  class Controller {
+    +str action
+    +int target_orientation
+    +act(robot, map)
+  }
+
+  class Webots["Webots (Robot API)"] {
+    <<external>>
+    +step(timeStep) int
+    +getDevice(name)
+  }
+
+  Director --> Map : reads
+  Director --> RobotAPI : reads
+  Director --> Controller : writes action
+  Controller --> RobotAPI : calls look / update_position
+  Controller --> Map : calls mark_explored
+  Map --> RobotAPI : reads pos / orientation
+  RobotAPI --> Webots : delegates movement
