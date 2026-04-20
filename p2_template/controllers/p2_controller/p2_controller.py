@@ -280,7 +280,10 @@ class Director:
             # O muro á nosa esquerda rematou (descubrimos unha esquina cara á esquerda).
             # Debemos xirar á esquerda, incluso se hai un muro en fronte (posición 0), 
             # para seguir pegados á parede.
-            controller.action = 'turn_left'
+            if 7 in rel_walls and 0 not in rel_walls:
+                controller.action = 'move_forward'  # Si hay muro en la diagonal izquierda, giramos a la derecha para evitar quedarnos atrapados
+            else:
+                controller.action = 'turn_left'
         elif 0 in rel_walls:
             # Hai muro en fronte pero NON hai esquina á esquerda. 
             # O paso está bloqueado, debemos virar á dereita.
