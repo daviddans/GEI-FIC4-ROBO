@@ -46,7 +46,8 @@ L = 6
 UPL = 7
 
 #Tolerancia de deteccion
-DETECT_TOL = 200
+DETECT_TOL_STRAIGHT = 189   # Para sensores frontais, traseiros e laterais (0, 2, 4, 6)
+DETECT_TOL_DIAGONAL = 167  # Para sensores nas esquinas (1, 3, 5, 7)
 
 # Nombres de los sensores de distancia basados en infrarrojo.
 # Ordeneinos como as orientacións do robot para facilitar a actualización do mapa.
@@ -271,32 +272,21 @@ class Director:
                 if map.getmap()[nr, nc] == WALL:
                     directions_with_walls.append(d)
         
-        # Calcular esquerda
-        left_dir = (robot.orientation - 2) % 8
+        # Calcular posicións relativas dos muros (0=Fronte, 2=Dereita, 4=Atrás, 6=Esquerda, 1/3/5/7=Diagonais)
+        rel_walls = [(d - robot.orientation) % 8 for d in directions_with_walls]
+        print(f"Map detected walls (relative): {rel_walls}")
         
-        diff = (directions_with_walls[0] - robot.orientation) % 8 if len(directions_with_walls) == 1 else -1
-        
-        if len(directions_with_walls) == 1 and diff == 5:
-            # Muro en posición 5 (atrás á esquerda): xiro de 90 graos á esquerda
-            controller.action = 'turn_left'
-        elif len(directions_with_walls) == 1 and diff == 7:
-            # Muro en posición 7 (diante á esquerda): mover cara adiante
+        if 0 in rel_walls:
+            # Muro en fronte, xirar á dereita
+            controller.action = 'turn_right'
+        elif 6 in rel_walls:
+            # Muro á esquerda, seguir avanzando para bordealo
             controller.action = 'move_forward'
-        elif left_dir in directions_with_walls:
-            # Comprobar se hai parede fronte
-            if robot.orientation not in directions_with_walls:
-                controller.action = 'move_forward'
-            else:
-                # Se hai parede á fronte e á esquerda, xiramos á DEREITA para buscar unha saída
-                controller.action = 'turn_right'
-        elif directions_with_walls:
-            # No hai muro na esquerda, pero si hai muros
-            target_d = directions_with_walls[0]
-            new_orientation = (target_d + 2) % 8
-            controller.action = 'turn_to'
-            controller.target_orientation = new_orientation
+        elif 5 in rel_walls:
+            # Xirar á esquerda para rodear a esquina
+            controller.action = 'turn_left'
         else:
-            # Non hai muros ao redor, avanzar para buscar un muro
+            # Sen muros coñecidos nas posicións clave. Avanzar para explorar
             controller.action = 'move_forward'
 
 
@@ -348,20 +338,45 @@ class Map:
         ]
         for i in range(8):
             value = irSensorList[i].getValue()
-            if value > DETECT_TOL:
+            # Determinar a tolerancia en función de se é un sensor recto ou en diagonal
+            tol = DETECT_TOL_DIAGONAL if i % 2 != 0 else DETECT_TOL_STRAIGHT
+            
+            if value > tol:
                 direction = (i + robot.orientation) % 8
                 dr, dc = deltas[direction]
                 nr = r + dr  # Posición na que está o muro como a posición do robot + o incremento correspondente á dirección do sensor
                 nc = c + dc
                 if 0 <= nr < WORLD_ROWS * 2 - 1 and 0 <= nc < WORLD_COLS * 2 - 1:
-                    self.map[nr, nc] = WALL
+                    # Sobrescribimos a WALL SOLO si esa celda aún era UNEXPLORED
+                    if self.map[nr, nc] == UNEXPLORED:
+                        self.map[nr, nc] = WALL
     
     def mark_explored(self, pos):
         dist = abs(pos[0] - WORLD_ROWS) + abs(pos[1] - WORLD_COLS)
+        # Siempre forzamos a sobreescribir la celda con su distancia al explorarla (esto elimina los "muros fantasma" falsos)
         self.map[pos[0], pos[1]] = dist
     
     def getmap(self):
         return self.map
+        
+    def print_map(self):
+        print("\n--- FINAL MAP ---")
+        for r in range(WORLD_ROWS*2-1):
+            row_str = ""
+            for c in range(WORLD_COLS*2-1):
+                val = self.map[r, c]
+                if val == WALL:
+                    row_str += " W "
+                elif val == UNEXPLORED:
+                    row_str += " ? "
+                elif val == BASE:
+                    row_str += " B "
+                else:
+                    # Formatear el número para que ocupe 2 espacios y sea legible
+                    row_str += f"{int(val):2d} "
+            print(row_str)
+        print("-----------------\n")
+
 if __name__ == "__main__":
 
     #Inializacion dos parametros do robot KeperaIV en webbots e toma de variables
@@ -374,8 +389,26 @@ if __name__ == "__main__":
     map = Map()
 
     # Loop infinito sincronizado con Webots
+    has_left_base = False
+    returned_to_base = False
     while kepir.step(TIME_STEP) != -1:
+        # Print raw sensor values rounded for easier reading
+        raw_sensors = [round(sensor.getValue(), 2) for sensor in irSensorList]
+        print(f"Raw Sensors (0-7): {raw_sensors}")
+        
         map.update(irSensorList, robot)
+        
+        if robot.pos != (WORLD_ROWS, WORLD_COLS):
+            has_left_base = True
+        
+        # Check if robot returned to base after moving
+        if robot.pos == (WORLD_ROWS, WORLD_COLS) and has_left_base and not returned_to_base:
+            print("Robot returned to base!")
+            map.print_map()
+            returned_to_base = True
+            # Optional: break the loop or continue if desired
+            # break
+        
         # Decidir accion a tomar
         director.plan_action(robot=robot, map=map, controller=controller)
         # Ejecutar la accion
