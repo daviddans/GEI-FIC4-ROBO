@@ -1,0 +1,29 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+
+\title{Memoria Robo2}
+\author{david dans villares,
+        anton calviño lopez}
+\date{April 2026}
+
+\begin{document}
+
+\maketitle
+
+\section{}
+-Introduccion:
+El objetivo de la practica es crear un controlador de un robot KeperaIV basado en una arquitectura hibrida. El comportamiento debe de mapear un entorno de dimensiones conocidas y discretizado, siguiendo las paredes por la izquierda. Una vez mapeado, entrara en modo patrulla. Si detectase un instruso, regresaria al punto de origen. Para la prueba del codigo se empleara el software simulador webbots.
+
+-Diseño:
+Para el diseño del comportamiento basado en aquitecturas hibridas, hemos tradado de minimizar la interdependencia entre los distintos componentes para dar una solucion mantenible y escalable. Donde cada  componente se puede intercambiar afectando nada o minimamente al resto de la arquietectura. Para lograr esto hemos decido emplear python con orientation a objetos, donde cada componente de la arquitectura sera implementado dentro de un objeto, definido por una interfaz, de forma que se puedan intercambiar distintas implementaciones, creando nuevos objetos que cumplan dichas interfaces.
+INTRODUCIR DIAGRAMA DE ESTADOS
+
+Componentes: Map, Director, Controller, RobotApi.
+Map se encargara de mantener un mapeado en memoria y acttualizarlo.
+
+Director se encargara de planear las acciones que el robot debe de tomar en cada momento.
+
+Controller se encargara de ordenar al robot realizar las acciones que estipule el director, y ofrecer un comportamiento reactivo ante los resultados que pueda producir.
+
+RobotApi, implementara la logica de bajo nivel especifica del robot, para ofrecer funciones de alto nivel y poder transportar el codigo a otras plataformas.
+\end{document}
