@@ -1,29 +1,202 @@
-\documentclass{article}
-\usepackage{graphicx} % Required for inserting images
+\documentclass[12pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{hyperref}
 
-\title{Memoria Robo2}
-\author{david dans villares,
-        anton calviño lopez}
-\date{April 2026}
+\title{Práctica 2: Control de un robot KheperaIV\\
+       \large Robótica --- Grado en Ingeniería Informática}
+\author{David Dans Villares \and Antón Calviño López}
+\date{Abril 2026}
 
 \begin{document}
 
 \maketitle
+\tableofcontents
+\newpage
 
-\section{}
--Introduccion:
-El objetivo de la practica es crear un controlador de un robot KeperaIV basado en una arquitectura hibrida. El comportamiento debe de mapear un entorno de dimensiones conocidas y discretizado, siguiendo las paredes por la izquierda. Una vez mapeado, entrara en modo patrulla. Si detectase un instruso, regresaria al punto de origen. Para la prueba del codigo se empleara el software simulador webbots.
+% ──────────────────────────────────────────────────────────────────────────────
+\section{Introducción}
 
--Diseño:
-Para el diseño del comportamiento basado en aquitecturas hibridas, hemos tradado de minimizar la interdependencia entre los distintos componentes para dar una solucion mantenible y escalable. Donde cada  componente se puede intercambiar afectando nada o minimamente al resto de la arquietectura. Para lograr esto hemos decido emplear python con orientation a objetos, donde cada componente de la arquitectura sera implementado dentro de un objeto, definido por una interfaz, de forma que se puedan intercambiar distintas implementaciones, creando nuevos objetos que cumplan dichas interfaces.
-INTRODUCIR DIAGRAMA DE ESTADOS
+El objetivo de esta práctica es diseñar e implementar el controlador de un robot
+KheperaIV basado en una arquitectura híbrida deliberativa-reactiva. El comportamiento
+requerido es el siguiente:
 
-Componentes: Map, Director, Controller, RobotApi.
-Map se encargara de mantener un mapeado en memoria y acttualizarlo.
+\begin{enumerate}
+  \item Explorar un entorno de dimensiones conocidas y discretizado, siguiendo las
+        paredes por la izquierda hasta haberlo mapeado completamente.
+  \item Una vez mapeado, entrar en modo patrulla, recorriendo el entorno en busca
+        de intrusos mediante la cámara.
+  \item Si se detecta un intruso, regresar al punto de origen por el camino mínimo.
+\end{enumerate}
 
-Director se encargara de planear las acciones que el robot debe de tomar en cada momento.
+Para la validación del código se emplea el simulador \textbf{Webots}.
 
-Controller se encargara de ordenar al robot realizar las acciones que estipule el director, y ofrecer un comportamiento reactivo ante los resultados que pueda producir.
+% ──────────────────────────────────────────────────────────────────────────────
+\section{Diseño}
 
-RobotApi, implementara la logica de bajo nivel especifica del robot, para ofrecer funciones de alto nivel y poder transportar el codigo a otras plataformas.
+Con el fin de obtener una solución mantenible y escalable, se ha minimizado la
+interdependencia entre componentes. Cada componente se define mediante una interfaz
+clara, de forma que distintas implementaciones sean intercambiables sin afectar al
+resto de la arquitectura. Para ello se ha empleado Python con orientación a objetos,
+donde cada componente de la arquitectura se encapsula en una clase.
+
+\subsection{Arquitectura general}
+
+El bucle principal del controlador sigue el ciclo:
+
+\begin{center}
+  \textit{Inicialización $\rightarrow$ Actualizar mapa $\rightarrow$
+          Planificar $\rightarrow$ Actuar $\rightarrow$ (repetir)}
+\end{center}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{figures/StateFlowDiagram.png}
+  \caption{Diagrama de flujo de la arquitectura general.}
+  \label{fig:stateflow}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/FullStateDiagram.png}
+  \caption{Detalle de las tres fases del ciclo principal.}
+  \label{fig:fullstate}
+\end{figure}
+
+\subsection{Componentes}
+
+Los cuatro componentes principales son: \textbf{Map}, \textbf{Director},
+\textbf{Controller} y \textbf{RobotAPI}.
+
+% ── Map ─────────────────────────────────────────────────────────────────────
+\subsubsection{Map}
+
+\texttt{Map} mantiene en memoria la representación interna del entorno y la actualiza
+en cada iteración a partir de las lecturas de los sensores IR.
+
+El mapa se almacena como una matriz de enteros de $23 \times 23$ posiciones. Esta
+representación intercalada permite guardar tanto las celdas transitables como los
+muros entre ellas en una única estructura. La celda de partida siempre se ubica en
+el centro de la matriz $(12, 12)$, de modo que el entorno puede expandirse en
+cualquier dirección sin requerir un redimensionado.
+
+Los valores almacenados en la matriz son:
+
+\begin{itemize}
+  \item \texttt{-1} (\texttt{UNEXPLORED}): celda no explorada.
+  \item \texttt{-2} (\texttt{WALL}): posición ocupada por un muro.
+  \item \texttt{0} (\texttt{BASE}): celda de origen.
+  \item $d > 0$: celda explorada, donde $d$ es la distancia Manhattan (en
+        coordenadas de mapa) respecto a la base. Este valor actúa como heurística
+        para la búsqueda de caminos.
+\end{itemize}
+
+\noindent\textit{Nota:} En caso de que la memoria fuera un recurso limitante en la
+plataforma real, el módulo podría adaptarse para almacenar únicamente una matriz
+$12 \times 12$, trasladando el mapeo en tiempo real conforme se explore.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/MapStateFlowDiagram.png}
+  \caption{Máquina de estados del componente \texttt{Map}.}
+  \label{fig:mapstate}
+\end{figure}
+
+% ── Director ────────────────────────────────────────────────────────────────
+\subsubsection{Director}
+
+\texttt{Director} planifica las acciones que el robot debe ejecutar en cada momento,
+en función del estado del mapa y de las lecturas de los sensores.
+
+\begin{itemize}
+  \item \textbf{Fase de exploración:} mientras el mapa no esté completamente
+        explorado, el Director ordena seguir los muros por la izquierda, avanzando
+        de celda en celda.
+  \item \textbf{Fase de patrulla:} una vez completo el mapa, el robot recorre el
+        entorno en busca de intrusos mediante la cámara, realizando barridos en el
+        sentido opuesto a la pared.
+  \item \textbf{Retorno a la base:} al detectar un intruso, se calcula el camino
+        mínimo mediante el algoritmo A*, usando como heurística los valores de
+        distancia almacenados en el mapa.
+\end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{figures/DirectorStateDiagram.png}
+  \caption{Máquina de estados del componente \texttt{Director}.}
+  \label{fig:directorstate}
+\end{figure}
+
+% ── Controller ──────────────────────────────────────────────────────────────
+\subsubsection{Controller}
+
+\texttt{Controller} recibe las acciones planificadas por el Director y las ejecuta
+sobre el robot, ofreciendo además un comportamiento reactivo ante resultados
+inesperados.
+
+Para minimizar llamadas redundantes y facilitar una posible arquitectura concurrente
+en el futuro, el Controller dispone de una \textbf{cola de acciones} en la que el
+Director deposita los movimientos planificados. En cada llamada a \texttt{act()},
+las acciones se ejecutan secuencialmente hasta que la cola queda vacía o se alcanza
+un estado de error. El estado de finalización queda disponible para que el Director
+pueda consultarlo y actuar en consecuencia.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{figures/ControllerFlowDiagram.png}
+  \caption{Máquina de estados del componente \texttt{Controller}.}
+  \label{fig:controllerstate}
+\end{figure}
+
+% ── RobotAPI ────────────────────────────────────────────────────────────────
+\subsubsection{RobotAPI}
+
+\texttt{RobotAPI} encapsula la lógica de bajo nivel específica del robot KheperaIV,
+exponiendo funciones de alto nivel (avanzar, girar, leer posición) al resto de los
+componentes. Esta capa de abstracción permite portar el controlador a otras
+plataformas sustituyendo únicamente este módulo.
+
+\subsection{Diagrama de clases}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/ClassDiagram.png}
+  \caption{Diagrama de clases de la arquitectura.}
+  \label{fig:classdiagram}
+\end{figure}
+
+\subsection{Diagrama de comunicación}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/CommunicationDiagram.png}
+  \caption{Diagrama de secuencia de una iteración del bucle principal.}
+  \label{fig:commdiagram}
+\end{figure}
+
+% ──────────────────────────────────────────────────────────────────────────────
+\section{Decisiones de diseño y suposiciones}
+
+\begin{itemize}
+  \item \textbf{Solo muros exteriores:} dado que el enunciado no especifica lo
+        contrario y los mundos de ejemplo así lo muestran, se asume que no existen
+        obstáculos interiores.
+
+  \item \textbf{Comportamiento reactivo ante inconsistencias:} el enunciado indica
+        que el comportamiento debe ser reactivo, pero no especifica qué hacer ante
+        una discrepancia entre el entorno real y el mapa almacenado. Se ha decidido
+        que, en caso de detectar una inconsistencia durante el retorno a la base:
+        \begin{enumerate}
+          \item Se cancela el plan de retorno en curso.
+          \item El robot vuelve a la última posición segura conocida.
+          \item Se actualiza el mapa añadiendo el nuevo obstáculo detectado.
+          \item El Director recalcula el camino mínimo con la información actualizada.
+          \item El Controller intenta ejecutar el nuevo plan hasta llegar a la base.
+        \end{enumerate}
+\end{itemize}
+
 \end{document}

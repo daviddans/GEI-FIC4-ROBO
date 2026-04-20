@@ -1,16 +1,14 @@
 ---
 title: Behaviour State Diagram
 ---
-stateDiagram
+stateDiagram-v2
   direction LR
   state Update {
     direction LR
     [*] --> s1
     s1 --> s2
     s2 --> [*]
-[*]    s1
-    s2
-[*]  }
+  }
   state Plan {
     direction LR
     [*] --> d1
@@ -28,15 +26,7 @@ stateDiagram
     d6 --> d7
     d8 --> d7
     d7 --> [*]
-[*]    d1
-    d3
-    d4
-    d6
-    choice1
-    choice2
-    d7
-    d8
-[*]  }
+  }
   state Act {
     direction LR
     [*] --> c1
@@ -51,17 +41,12 @@ stateDiagram
     choiceB --> c1:Yes
     choiceB --> c3:No
     c3 --> [*]
-[*]    c1
-    c2
-    c3
-    choiceA
-    choiceB
-[*]  }
+  }
   [*] --> Initialize
   Initialize --> Update
   Update --> Plan
   Plan --> Act
-  Act --> Update:<br>
+  Act --> Update
   Update:Map
   s1:Read sensors
   s2:Updates near map positions
@@ -70,7 +55,7 @@ stateDiagram
   d3:Explore
   d4:Patrol state
   d6:Return to Base
-  d7:Save actions planed
+  d7:Save actions planned
   d8:Keep patrolling
   Act:Controller
   c1:DeQueueAction
