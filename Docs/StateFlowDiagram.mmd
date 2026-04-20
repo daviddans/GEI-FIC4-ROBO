@@ -1,14 +1,18 @@
 ---
-config:
-  layout: elk
+title: Behaviour State Diagram
 ---
-stateDiagram
+stateDiagram-v2
   direction LR
+
   [*] --> Initialize
-  Initialize --> s1
-  s1 --> s2
-  s2 --> s3
-  s3 --> s1:ActionQueue is Empty
-  s1:Update Map
-  s2:PlanActions
-  s3:Act
+
+  state "Initialize" as Initialize
+  state "Update Map" as Update
+  state "PlanActions" as Plan
+  state "Act" as Act
+
+  Initialize --> Update
+  Update --> Plan
+  Plan --> Act
+  Act --> Update : ActionQueue empty
+  Plan --> [*]
