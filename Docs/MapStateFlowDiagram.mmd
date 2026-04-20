@@ -1,0 +1,10 @@
+---
+title: Map State Diagram
+---
+stateDiagram
+  direction LR
+  [*] --> s1
+  s1 --> s2
+  s2 --> [*]
+  s1:Read sensors
+  s2:Updates near map positions
