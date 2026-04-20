@@ -276,15 +276,18 @@ class Director:
         rel_walls = [(d - robot.orientation) % 8 for d in directions_with_walls]
         print(f"Map detected walls (relative): {rel_walls}")
         
-        if 0 in rel_walls:
-            # Muro en fronte, xirar á dereita
+        if 5 in rel_walls and 6 not in rel_walls:
+            # O muro á nosa esquerda rematou (descubrimos unha esquina cara á esquerda).
+            # Debemos xirar á esquerda, incluso se hai un muro en fronte (posición 0), 
+            # para seguir pegados á parede.
+            controller.action = 'turn_left'
+        elif 0 in rel_walls:
+            # Hai muro en fronte pero NON hai esquina á esquerda. 
+            # O paso está bloqueado, debemos virar á dereita.
             controller.action = 'turn_right'
         elif 6 in rel_walls:
-            # Muro á esquerda, seguir avanzando para bordealo
+            # Muro á esquerda, e libre en fronte, seguir avanzando para bordealo
             controller.action = 'move_forward'
-        elif 5 in rel_walls:
-            # Xirar á esquerda para rodear a esquina
-            controller.action = 'turn_left'
         else:
             # Sen muros coñecidos nas posicións clave. Avanzar para explorar
             controller.action = 'move_forward'
