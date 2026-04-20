@@ -1,0 +1,19 @@
+---
+config:
+  layout: elk
+---
+stateDiagram
+  direction LR
+  state s5 <<choice>>
+  state s12 <<choice>>
+  [*] --> s1
+  s1 --> s5:Is queue Empty ?
+  s5 --> s2:No
+  s10 --> [*]
+  s5 --> s10:Yes
+  s2 --> s12:Succesfull?
+  s12 --> s1:Yes
+  s12 --> s10:No
+  s1:DeQueueAction
+  s2:ExecuteAction
+  s10:SaveExitStatus
