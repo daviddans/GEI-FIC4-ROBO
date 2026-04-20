@@ -12,16 +12,19 @@ from enum import Enum
 import time  # Si queremos utilizar time.sleep().
 import numpy as np  # Si queremos utilizar numpy para procesar la imagen.
 import cv2  # Si queremos utilizar OpenCV para procesar la imagen.
+import math
 
 WHEEL_DIAMETER = 42  # Diameter in mm
 WHEEL_RADIUS = 21  # Radius in mm
 WHEEL_SPACE = 108.29  # Space between wheels (specs:105.4mm, corrected:108.29mm)
+RADIO_ENTRE_RUEDAS = 54.145  # Half of WHEEL_SPACE for Webots model
 
 MAX_SPEED = 47.6
 # Velocidad por defecto para este comportamiento.
 CRUISE_SPEED = 8
 # Time step por defecto para el controlador.
 TIME_STEP = 32
+DISTANCIA_CUADRADICULA = 250/WHEEL_RADIUS
 
 #CONSTANTES
 #mapa
@@ -43,7 +46,7 @@ L = 6
 UPL = 7
 
 #Tolerancia de deteccion
-DETECT_TOL = 10
+DETECT_TOL = 200
 
 # Nombres de los sensores de distancia basados en infrarrojo.
 # Ordeneinos como as orientacións do robot para facilitar a actualización do mapa.
@@ -125,11 +128,42 @@ def move_distance_position(increment, velocity, timeStep, robot, leftWheel, righ
     pR0 = posR.getValue()
 
     while posL.getValue() < (pL0 + increment - 0.01):
-        robot.step(timeStep)
+        if robot.step(timeStep) == -1:
+            break
 
     # Opcionalmente se puede introducir una espera para asegurar que el robot está parado
     # al finalizar la ejecución del movimiento
-    time.sleep(0.01)
+    if robot.step(timeStep) != -1:
+        time.sleep(0.01)
+    robot.step(timeStep)
+
+def turn_angle(target_orientation, current_orientation, velocity, timeStep, robot, leftWheel, rightWheel, posL, posR):
+    """
+    Girar el robot sobre su propio eje hasta la orientación objetivo.
+
+    target_orientation: orientación objetivo (0-7)
+    current_orientation: orientación actual del robot (0-7)
+    velocity: velocidad a la que se girará el robot (en m/s)
+    timeStep: tiempo (en milisegundos) de actualización
+    """
+    angle_diff = (target_orientation - current_orientation) % 8
+    if angle_diff > 4:
+        angle_diff -= 8
+    angle_rad = angle_diff * (math.pi / 4)
+    #Cálculo dos radians de xiro
+    delta = angle_rad * RADIO_ENTRE_RUEDAS / WHEEL_RADIUS
+    leftWheel.setVelocity(velocity)
+    rightWheel.setVelocity(velocity)
+    leftWheel.setPosition(posL.getValue() + delta)
+    rightWheel.setPosition(posR.getValue() - delta)
+
+    pL0 = posL.getValue()
+    while posL.getValue() < (pL0 + delta - 0.01) if delta > 0 else posL.getValue() > (pL0 + delta + 0.01):
+        if robot.step(timeStep) == -1:
+            break
+
+    if robot.step(timeStep) != -1:
+        time.sleep(0.01)
     robot.step(timeStep)
 
 def initialization():
@@ -172,14 +206,38 @@ def initialization():
 
 #Objeto que representa el estado del robot y contiene funciones de alto nivel para emplearlo
 class RobotAPI():
-    def __init__(self):
+    deltas_movement = [
+        (-1, 0),  # UP
+        (-1, 1),  # UPR
+        (0, 1),   # R
+        (1, 1),   # DOWNR
+        (1, 0),   # DOWN
+        (1, -1),  # DOWNL
+        (0, -1),  # L
+        (-1, -1)  # UPL
+    ]
+    
+    def __init__(self, webots_robot, leftWheel, rightWheel, posL, posR):
+        #Posición robot
         self.pos = (WORLD_ROWS, WORLD_COLS)
         self.orientation = 0
+        self.webots_robot = webots_robot
+        self.leftWheel = leftWheel
+        self.rightWheel = rightWheel
+        #Posición rodas
+        self.posL = posL
+        self.posR = posR
         
     def look(self, direction):
         if not (0 <= direction < 8):
             raise ValueError("Invalid direction")
+        turn_angle(direction, self.orientation, CRUISE_SPEED, TIME_STEP, self.webots_robot, self.leftWheel, self.rightWheel, self.posL, self.posR)
         self.orientation = direction
+
+    def update_position(self, orientation):
+        dr, dc = self.deltas_movement[orientation]
+        self.pos = (self.pos[0] + dr, self.pos[1] + dc)
+
         #Implementar control del robot
 
 
@@ -217,33 +275,58 @@ class Director:
         left_dir = (robot.orientation - 2) % 8
         
         if left_dir in directions_with_walls:
-            # Muro na esquerda, seguir avanzando
-            controller.action = 'move_forward'
+            # Comprobar se hai parede fronte
+            if robot.orientation not in directions_with_walls:
+                controller.action = 'move_forward'
+            else:
+                # Se hai parede á fronte e á esquerda, xiramos á DEREITA para buscar unha saída
+                controller.action = 'turn_right'
         elif directions_with_walls:
             # No hai muro na esquerda, pero si hai muros
             target_d = directions_with_walls[0]
             new_orientation = (target_d + 2) % 8
-            # O Controllador debería facer robot.look(new_orientation)
+            controller.action = 'turn_to'
+            controller.target_orientation = new_orientation
         else:
-            # Non hai muros ao redor, acción???
+            # Non hai muros ao redor, avanzar para buscar un muro
+            controller.action = 'move_forward'
 
 
 # Clase que se encarga de controlar el movimiento del robot.
 class Controller:
-    def __init__(self, director):
-        pass
+    def __init__(self):
+        self.action = None
+        self.target_orientation = None
     
-    def act(self, map):
-        pass
+    def act(self, robot, map):
+        print(f"Action: {self.action}, Orientation: {robot.orientation}")
+        if self.action == 'move_forward':
+            move_distance_position(DISTANCIA_CUADRADICULA, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
+            robot.update_position(robot.orientation)
+            map.mark_explored(robot.pos)
+        elif self.action == 'turn_to':
+            turn_angle(self.target_orientation, robot.orientation, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
+            robot.orientation = self.target_orientation
+        elif self.action == 'turn_left':
+            target_orientation = (robot.orientation - 2) % 8
+            turn_angle(target_orientation, robot.orientation, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
+            robot.orientation = target_orientation
+        elif self.action == 'turn_right':
+            target_orientation = (robot.orientation + 2) % 8
+            turn_angle(target_orientation, robot.orientation, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
+            robot.orientation = target_orientation
+        # Reseteamos a acción
+        self.action = None
+        self.target_orientation = None
 
 
 # Clase que se encarga de generar el mapa en memoría y actualizarlo.
 class Map:
-    def __init__(self, director):
+    def __init__(self):
         self.map = np.full((WORLD_ROWS*2-1, WORLD_COLS*2-1), UNEXPLORED)
-        self.map[WORLD_COLS,WORLD_ROWS] = 0
+        self.map[WORLD_ROWS, WORLD_COLS] = BASE  # Assuming BASE is 0
 
-def update(self, irSensorList, robot):
+    def update(self, irSensorList, robot):
         r, c = robot.pos
         deltas = [
             (-1, 0),  # UP
@@ -260,29 +343,32 @@ def update(self, irSensorList, robot):
             if value > DETECT_TOL:
                 direction = (i + robot.orientation) % 8
                 dr, dc = deltas[direction]
-                nr = r + dr #Posición na que está o muro como a posición do robot + o incremento correspondente á dirección do sensor
+                nr = r + dr  # Posición na que está o muro como a posición do robot + o incremento correspondente á dirección do sensor
                 nc = c + dc
                 if 0 <= nr < WORLD_ROWS * 2 - 1 and 0 <= nc < WORLD_COLS * 2 - 1:
                     self.map[nr, nc] = WALL
-        
+    
+    def mark_explored(self, pos):
+        dist = abs(pos[0] - WORLD_ROWS) + abs(pos[1] - WORLD_COLS)
+        self.map[pos[0], pos[1]] = dist
     
     def getmap(self):
         return self.map
 if __name__ == "__main__":
 
-    #Inializacion de los parametros del robot KeperaIV en webbots e toma de variables
+    #Inializacion dos parametros do robot KeperaIV en webbots e toma de variables
     kepir, lWheel, rWheel, irSensorList, leftWheelPos, rightWheelPos, camera = initialization()
 
     #Inializacion de los modulos de comportamiento del robot.
-    robot = RobotAPI()
+    robot = RobotAPI(kepir, lWheel, rWheel, leftWheelPos, rightWheelPos)
     controller = Controller()
     director = Director()
     map = Map()
 
-     #Loop infinito
-    while(True):
+    # Loop infinito sincronizado con Webots
+    while kepir.step(TIME_STEP) != -1:
         map.update(irSensorList, robot)
-        #Decidir accion a tomar
+        # Decidir accion a tomar
         director.plan_action(robot=robot, map=map, controller=controller)
-        #Ejecutar la accion
-        controller.act(map=map)
+        # Ejecutar la accion
+        controller.act(robot=robot, map=map)
