@@ -274,7 +274,15 @@ class Director:
         # Calcular esquerda
         left_dir = (robot.orientation - 2) % 8
         
-        if left_dir in directions_with_walls:
+        diff = (directions_with_walls[0] - robot.orientation) % 8 if len(directions_with_walls) == 1 else -1
+        
+        if len(directions_with_walls) == 1 and diff == 5:
+            # Muro en posición 5 (atrás á esquerda): xiro de 90 graos á esquerda
+            controller.action = 'turn_left'
+        elif len(directions_with_walls) == 1 and diff == 7:
+            # Muro en posición 7 (diante á esquerda): mover cara adiante
+            controller.action = 'move_forward'
+        elif left_dir in directions_with_walls:
             # Comprobar se hai parede fronte
             if robot.orientation not in directions_with_walls:
                 controller.action = 'move_forward'
