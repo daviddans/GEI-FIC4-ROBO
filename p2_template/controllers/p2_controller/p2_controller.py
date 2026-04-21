@@ -7,14 +7,13 @@
 # Función de ejemplo para mover el robot Khepera IV por posición.
 #########################################################################################
 import time
-from controller import Robot, Supervisor
+from controller import Robot, Supervisor # type: ignore
 from enum import Enum
-import time  # Si queremos utilizar time.sleep().
 import numpy as np  # Si queremos utilizar numpy para procesar la imagen.
 import cv2  # Si queremos utilizar OpenCV para procesar la imagen.
 import math
+from collections import deque
 
-WHEEL_DIAMETER = 42  # Diameter in mm
 WHEEL_RADIUS = 21  # Radius in mm
 WHEEL_SPACE = 108.29  # Space between wheels (specs:105.4mm, corrected:108.29mm)
 RADIO_ENTRE_RUEDAS = 54.145  # Half of WHEEL_SPACE for Webots model
@@ -45,9 +44,34 @@ DOWNL = 5
 L = 6
 UPL = 7
 
-#Tolerancia de deteccion
-DETECT_TOL_STRAIGHT = 189   # Para sensores frontais, traseiros e laterais (0, 2, 4, 6)
-DETECT_TOL_DIAGONAL = 167  # Para sensores nas esquinas (1, 3, 5, 7)
+#Tolerancia de deteccion IR
+DETECT_TOL_STRAIGHT = 150 # Para sensores frontais, traseiros e laterais (0, 2, 4, 6)
+DETECT_TOL_DIAGONAL = 140  # Para sensores nas esquinas (1, 3, 5, 7)
+
+#Tolerancia de movimiento (encoder, rad)
+MOVE_TOLERANCE = 0.02
+
+
+#Deteccion de intruso (camara)
+YELLOW_R_MIN = 200
+YELLOW_G_MIN = 200
+YELLOW_B_MAX = 50
+YELLOW_MIN_PIXELS = 5
+
+MAP_ROWS = WORLD_ROWS * 2 + 1  # 25 — simétrico: 12 pasos en cada dirección desde base
+MAP_COLS = WORLD_COLS * 2 + 1  # 25
+
+#Deltas de movimiento por orientación (UP=0 … UPL=7, sentido horario)
+DIRECTION_DELTAS = [
+    (-1, 0),  # UP
+    (-1, 1),  # UPR
+    (0, 1),   # R
+    (1, 1),   # DOWNR
+    (1, 0),   # DOWN
+    (1, -1),  # DOWNL
+    (0, -1),  # L
+    (-1, -1)  # UPL
+]
 
 # Nombres de los sensores de distancia basados en infrarrojo.
 # Ordeneinos como as orientacións do robot para facilitar a actualización do mapa.
@@ -63,313 +87,262 @@ INFRARED_SENSORS_NAMES = [
 ]
 
 
-def enable_distance_sensors(robot, timeStep, sensorNames):
-    """
-    Obtener y activar los sensores de distancia.
-
-    Return: lista con los sensores de distancia activados, en el mismo orden
-    establecido en la lista de  nombres (sensorNames).
-    """
-
-    sensorList = []
-
-    for name in sensorNames:
-        sensorList.append(robot.getDevice(name))
-
-    for sensor in sensorList:
-        sensor.enable(timeStep)
-
-    return sensorList
-
-def process_image_rgb(camera):
-    """
-    Procesamiento del último frame capturado por el dispositivo de la cámara
-    (según el time_step establecido para la cámara).
-    ¡ATENCIÓN!: Esta función no es thread-safe, ya que accede al buffer en memoria de la cámara.
-
-    RECOMENDACIÓN: utilizar OpenCV para procesar más eficientemente la imagen
-    (ej. hacer una detección de color en HSV).
-    """
-
-    W = camera.getWidth()
-    H = camera.getHeight()
-
-    image = camera.getImage()
-
-    # Si es suficiente, podríamos procesar solo una parte de la imagen para optimizar .
-    for x in range(0, W):
-        for y in range(0, H):
-            b = camera.imageGetBlue(image, W, x, y)
-            g = camera.imageGetGreen(image, W, x, y)
-            r = camera.imageGetRed(image, W, x, y)
-
-            # TODO: Procesar el pixel (x,y) de la imagen.
-            # ...
-
-
-            
-def move_distance_position(increment, velocity, timeStep, robot, leftWheel, rightWheel, posL, posR):
-    """
-    Mover el robot en línea recta una distancia determinada utilizando movimiento por posición.
-
-    leftWheel: motor del lado izquierdo
-    rightWheel: motor del lado derecho
-    posL: sensor de posición del motor del lado izquierdo
-    posR: sensor de posición del motor del lado derecho
-    increment: distancia a recorrer (en metros)
-    velocity: velocidad a la que se moverá el robot (en m/s)
-    timeStep: tiempo (en milisegundos) de actualización por defecto para los sensores/actuadores.
-    """
-    leftWheel.setVelocity(velocity)
-    rightWheel.setVelocity(velocity)
-    leftWheel.setPosition(posL.getValue() + increment)
-    rightWheel.setPosition(posR.getValue() + increment)
-
-    pL0 = posL.getValue()
-    pR0 = posR.getValue()
-
-    while posL.getValue() < (pL0 + increment - 0.01):
-        if robot.step(timeStep) == -1:
-            break
-
-    # Opcionalmente se puede introducir una espera para asegurar que el robot está parado
-    # al finalizar la ejecución del movimiento
-    if robot.step(timeStep) != -1:
-        time.sleep(0.01)
-    robot.step(timeStep)
-
-def turn_angle(target_orientation, current_orientation, velocity, timeStep, robot, leftWheel, rightWheel, posL, posR):
-    """
-    Girar el robot sobre su propio eje hasta la orientación objetivo.
-
-    target_orientation: orientación objetivo (0-7)
-    current_orientation: orientación actual del robot (0-7)
-    velocity: velocidad a la que se girará el robot (en m/s)
-    timeStep: tiempo (en milisegundos) de actualización
-    """
-    angle_diff = (target_orientation - current_orientation) % 8
-    if angle_diff > 4:
-        angle_diff -= 8
-    angle_rad = angle_diff * (math.pi / 4)
-    #Cálculo dos radians de xiro
-    delta = angle_rad * RADIO_ENTRE_RUEDAS / WHEEL_RADIUS
-    leftWheel.setVelocity(velocity)
-    rightWheel.setVelocity(velocity)
-    leftWheel.setPosition(posL.getValue() + delta)
-    rightWheel.setPosition(posR.getValue() - delta)
-
-    pL0 = posL.getValue()
-    while posL.getValue() < (pL0 + delta - 0.01) if delta > 0 else posL.getValue() > (pL0 + delta + 0.01):
-        if robot.step(timeStep) == -1:
-            break
-
-    if robot.step(timeStep) != -1:
-        time.sleep(0.01)
-    robot.step(timeStep)
-
-def initialization():
-
-    # Instanciar objeto Robot (alternativamente, Supervisor)
-    robot = Robot()
-
-    # Si queremos obtener el timestep de la simulación.
-    # timeStep = int(robot.getBasicTimeStep())
-    timeStep = 32
-
-    # Obtener dispositivos correspondientes a los motores de las ruedas.
-    leftWheel = robot.getDevice("left wheel motor")
-    rightWheel = robot.getDevice("right wheel motor")
-
-    # Configuración inicial para utilizar movimiento por posición (necesario para odometría).
-    # En movimiento por velocidad, establecer posición a infinito (wheel.setPosition(float('inf'))).
-    leftWheel.setPosition(0)
-    rightWheel.setPosition(0)
-    leftWheel.setVelocity(0)
-    rightWheel.setVelocity(0)
-
-    # Obtener y activar los sensores de posición de las ruedas (encoders).
-    posL = robot.getDevice("left wheel sensor")
-    posR = robot.getDevice("right wheel sensor")
-    posL.enable(timeStep)
-    posR.enable(timeStep)
-    robot.step(timeStep)
-
-    # Obtener una lista con los sensores infrarrojos ya activados
-    irSensorList = enable_distance_sensors(robot, timeStep, INFRARED_SENSORS_NAMES)
-
-    # Obtener el dispositivo de la cámara
-    camera = robot.getDevice("camera")
-    # Activar el dispositivo de la cámara (el tiempo de actualización de los frames
-    # de la cámara no debería ser muy alto debido al alto volumen de datos que implica).
-    camera.enable(timeStep * 10)
-
-    return robot, leftWheel, rightWheel, irSensorList, posL, posR, camera
-
 #Objeto que representa el estado del robot y contiene funciones de alto nivel para emplearlo
 class RobotAPI():
-    deltas_movement = [
-        (-1, 0),  # UP
-        (-1, 1),  # UPR
-        (0, 1),   # R
-        (1, 1),   # DOWNR
-        (1, 0),   # DOWN
-        (1, -1),  # DOWNL
-        (0, -1),  # L
-        (-1, -1)  # UPL
-    ]
-    
-    def __init__(self, webots_robot, leftWheel, rightWheel, posL, posR):
-        #Posición robot
+    def __init__(self,):
         self.pos = (WORLD_ROWS, WORLD_COLS)
-        self.orientation = 0
-        self.webots_robot = webots_robot
-        self.leftWheel = leftWheel
-        self.rightWheel = rightWheel
-        #Posición rodas
-        self.posL = posL
-        self.posR = posR
-        
-    def look(self, direction):
-        if not (0 <= direction < 8):
-            raise ValueError("Invalid direction")
-        turn_angle(direction, self.orientation, CRUISE_SPEED, TIME_STEP, self.webots_robot, self.leftWheel, self.rightWheel, self.posL, self.posR)
-        self.orientation = direction
+        self.orientation = UP #Asumimos que el robot empieza mirando al norte.
+        self.webots_robot = Robot()
 
-    def update_position(self, orientation):
-        dr, dc = self.deltas_movement[orientation]
+        self.leftWheel = self.webots_robot.getDevice("left wheel motor")
+        self.rightWheel = self.webots_robot.getDevice("right wheel motor")
+        self.leftWheel.setPosition(0)
+        self.rightWheel.setPosition(0)
+        self.leftWheel.setVelocity(0)
+        self.rightWheel.setVelocity(0)
+
+        self.posL = self.webots_robot.getDevice("left wheel sensor")
+        self.posR = self.webots_robot.getDevice("right wheel sensor")
+        self.posL.enable(TIME_STEP)
+        self.posR.enable(TIME_STEP)
+
+        self.irSensorList = []
+        for name in INFRARED_SENSORS_NAMES:
+            sensor = self.webots_robot.getDevice(name)
+            sensor.enable(TIME_STEP)
+            self.irSensorList.append(sensor)
+
+        self.camera = self.webots_robot.getDevice("camera")
+        self.camera.enable(TIME_STEP * 10)
+
+        self.webots_robot.step(TIME_STEP)
+
+    def step(self):
+        return self.webots_robot.step(TIME_STEP)
+        
+    def _move_distance(self, increment, velocity=CRUISE_SPEED):
+        self.leftWheel.setVelocity(velocity)
+        self.rightWheel.setVelocity(velocity)
+        self.leftWheel.setPosition(self.posL.getValue() + increment)
+        self.rightWheel.setPosition(self.posR.getValue() + increment)
+
+        pL0 = self.posL.getValue()
+        while self.posL.getValue() < (pL0 + increment - MOVE_TOLERANCE):
+            if self.webots_robot.step(TIME_STEP) == -1:
+                break
+
+        if self.webots_robot.step(TIME_STEP) != -1:
+            time.sleep(0.3)
+        self.webots_robot.step(TIME_STEP)
+
+    def _turn(self, target_orientation, velocity=CRUISE_SPEED):
+        # 1. Diferencia mínima (-4 a 4)
+        diff = (target_orientation - self.orientation) % 8
+        if diff > 4:
+            diff -= 8
+        # 2. Ángulo en radianes
+        angle = diff * (math.pi / 4)
+        # 3. Convertir a movimiento de ruedas
+        delta = angle * RADIO_ENTRE_RUEDAS / WHEEL_RADIUS
+        # 4. Objetivos de ruedas
+        targetL = self.posL.getValue() + delta
+        targetR = self.posR.getValue() - delta
+        self.leftWheel.setVelocity(velocity)
+        self.rightWheel.setVelocity(velocity)
+        self.leftWheel.setPosition(targetL)
+        self.rightWheel.setPosition(targetR)
+        # 5. Espera robusta
+        while True:
+            errorL = abs(self.posL.getValue() - targetL)
+            errorR = abs(self.posR.getValue() - targetR)
+            if errorL < MOVE_TOLERANCE and errorR < MOVE_TOLERANCE:
+                break
+            if self.webots_robot.step(TIME_STEP) == -1:
+                break
+        # 6. Actualizar orientación
+        self.orientation = target_orientation
+
+    def _detect_yellow(self):
+        image = self.camera.getImage()
+        W = self.camera.getWidth()
+        H = self.camera.getHeight()
+        count = 0
+        for x in range(W):
+            for y in range(H):
+                r = self.camera.imageGetRed(image, W, x, y)
+                g = self.camera.imageGetGreen(image, W, x, y)
+                b = self.camera.imageGetBlue(image, W, x, y)
+                if r > YELLOW_R_MIN and g > YELLOW_G_MIN and b < YELLOW_B_MAX:
+                    count += 1
+                    if count >= YELLOW_MIN_PIXELS:
+                        return True
+        return False
+
+    def detect_intruder(self):
+        return self._detect_yellow()
+    
+    def get_orientation(self):
+        return self.orientation
+    
+    def get_position(self):
+        return self.pos
+
+    def scan_surroundings(self):
+        """Returns list[8] of bool indexed by absolute direction (0=UP, clockwise).
+        True = wall detected, False = free."""
+        result = [False] * 8
+        for i, sensor in enumerate(self.irSensorList):
+            tol = DETECT_TOL_DIAGONAL if i % 2 != 0 else DETECT_TOL_STRAIGHT
+            abs_dir = (i + self.orientation) % 8
+            result[abs_dir] = sensor.getValue() > tol
+        return result
+
+    def move_forward(self):
+        self._move_distance(DISTANCIA_CUADRADICULA)
+        # Update position after movement
+        dr, dc = DIRECTION_DELTAS[self.orientation]
         self.pos = (self.pos[0] + dr, self.pos[1] + dc)
 
-        #Implementar control del robot
+    def turn_left90(self):
+        self._turn((self.orientation - 2) % 8)
+
+    def turn_right90(self):
+        self._turn((self.orientation + 2) % 8)
 
 
 #Modulos de comportamiento.
 # Clase que decide la siguiente accion del robot.
 class Director:
     def __init__(self):
-        pass
+        self.mode = 'explore'
+        self.has_left_base = False
 
-    def plan_action(self, robot, map, controller):
-        r, c = robot.pos
-        deltas = [
-            (-1, 0),  # UP
-            (-1, 1),  # UPR
-            (0, 1),   # R
-            (1, 1),   # DOWNR
-            (1, 0),   # DOWN
-            (1, -1),  # DOWNL
-            (0, -1),  # L
-            (-1, -1)  # UPL
-        ]
-        
-        # Chekear en que direccions hai muros
-        directions_with_walls = []
-        #d sirve como acumulador e indica a dirección que se está comprobando (mesma notación que nas variables gloabais)
-        for d in range(8):
-            dr, dc = deltas[d]
-            nr = r + dr
-            nc = c + dc
-            if 0 <= nr < WORLD_ROWS * 2 - 1 and 0 <= nc < WORLD_COLS * 2 - 1:
-                if map.getmap()[nr, nc] == WALL:
-                    directions_with_walls.append(d)
-        
-        # Calcular posicións relativas dos muros (0=Fronte, 2=Dereita, 4=Atrás, 6=Esquerda, 1/3/5/7=Diagonais)
-        rel_walls = [(d - robot.orientation) % 8 for d in directions_with_walls]
-        print(f"Map detected walls (relative): {rel_walls}")
-        
-        if 5 in rel_walls and 6 not in rel_walls:
-            # O muro á nosa esquerda rematou (descubrimos unha esquina cara á esquerda).
-            # Debemos xirar á esquerda, incluso se hai un muro en fronte (posición 0), 
-            # para seguir pegados á parede.
-            if 7 in rel_walls and 0 not in rel_walls:
-                controller.action = 'move_forward'  # Si hay muro en la diagonal izquierda, giramos a la derecha para evitar quedarnos atrapados
-            else:
-                controller.action = 'turn_left'
-        elif 0 in rel_walls:
-            # Hai muro en fronte pero NON hai esquina á esquerda. 
-            # O paso está bloqueado, debemos virar á dereita.
-            controller.action = 'turn_right'
-        elif 6 in rel_walls:
-            # Muro á esquerda, e libre en fronte, seguir avanzando para bordealo
-            controller.action = 'move_forward'
+    def plan_action(self, robot, map_obj, controller):
+        if robot.get_position() != (WORLD_ROWS, WORLD_COLS):
+            self.has_left_base = True
         else:
-            # Sen muros coñecidos nas posicións clave. Avanzar para explorar
-            controller.action = 'move_forward'
+            map_obj.print_map()
+
+        if self.mode == 'explore':
+            if self.has_left_base and robot.get_position() == (WORLD_ROWS, WORLD_COLS):
+                print("Exploration complete. Switching to patrol.")
+                self.mode = 'patrol'
+            else:
+                self._plan_explore(robot, map_obj, controller)
+        elif self.mode == 'patrol':
+            self._plan_patrol(robot, map_obj, controller)
+        elif self.mode == 'return':
+            self._plan_return(robot, map_obj, controller)
+
+    def _plan_explore(self, robot, map_obj, controller):
+        r, c = robot.get_position()
+        current_orient = robot.get_orientation()
+
+        abs_left  = (current_orient - 2) % 8
+        abs_front = current_orient
+        abs_right = (current_orient + 2) % 8
+        abs_back  = (current_orient + 4) % 8
+
+        def is_blocked(direction_abs):
+            dr, dc = DIRECTION_DELTAS[direction_abs]
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < MAP_ROWS and 0 <= nc < MAP_COLS:
+                return map_obj.getmap()[nr, nc] == WALL
+            return True
+
+        if not is_blocked(abs_left):
+            target = abs_left
+        elif not is_blocked(abs_front):
+            target = abs_front
+        elif not is_blocked(abs_right):
+            target = abs_right
+        else:
+            target = abs_back
+
+        print(f"Pos: {robot.get_position()}, Orient: {current_orient} | target abs dir: {target}")
+        controller.add_action(target)
+
+    def _plan_patrol(self, robot, map_obj, controller):
+        if robot.detect_intruder():
+            print("Intruder detected! Returning to base.")
+            self.mode = 'return'
+        else:
+            self._plan_explore(robot, map_obj, controller)
+
+    def _plan_return(self, robot, map_obj, controller):
+        pass  # A* pendiente
 
 
 # Clase que se encarga de controlar el movimiento del robot.
 class Controller:
     def __init__(self):
-        self.action = None
-        self.target_orientation = None
-    
-    def act(self, robot, map):
-        print(f"Action: {self.action}, Orientation: {robot.orientation}")
-        if self.action == 'move_forward':
-            move_distance_position(DISTANCIA_CUADRADICULA, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
-            robot.update_position(robot.orientation)
-            map.mark_explored(robot.pos)
-        elif self.action == 'turn_to':
-            turn_angle(self.target_orientation, robot.orientation, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
-            robot.orientation = self.target_orientation
-        elif self.action == 'turn_left':
-            target_orientation = (robot.orientation - 2) % 8
-            turn_angle(target_orientation, robot.orientation, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
-            robot.orientation = target_orientation
-        elif self.action == 'turn_right':
-            target_orientation = (robot.orientation + 2) % 8
-            turn_angle(target_orientation, robot.orientation, CRUISE_SPEED, TIME_STEP, robot.webots_robot, robot.leftWheel, robot.rightWheel, robot.posL, robot.posR)
-            robot.orientation = target_orientation
-        # Reseteamos a acción
-        self.action = None
-        self.target_orientation = None
+        self.queue = deque()
+        self.status = None  # None | 'success' | 'failure'
+
+    def add_action(self, abs_direction):
+        """Queue an absolute direction (0-7) to move toward."""
+        self.queue.append(abs_direction)
+
+    def get_status(self):
+        return self.status
+
+    def act(self, robot):
+        self.status = None
+        if not self.queue:
+            self.status = 'idle'
+            return
+
+        while self.queue:
+            abs_direction = self.queue.popleft()
+
+            diff = (abs_direction - robot.get_orientation()) % 8
+            if diff == 2:
+                robot.turn_right90()
+            elif diff == 4:
+                robot.turn_right90()
+                robot.turn_right90()
+            elif diff == 6:
+                robot.turn_left90()
+
+            print(f"Moving toward abs dir: {abs_direction}, orient: {robot.get_orientation()}")
+            robot.move_forward()
+
+        self.status = 'success'
 
 
 # Clase que se encarga de generar el mapa en memoría y actualizarlo.
 class Map:
     def __init__(self):
-        self.map = np.full((WORLD_ROWS*2-1, WORLD_COLS*2-1), UNEXPLORED)
-        self.map[WORLD_ROWS, WORLD_COLS] = BASE  # Assuming BASE is 0
+        self.map = np.full((MAP_ROWS, MAP_COLS), UNEXPLORED)
+        self.map[WORLD_ROWS, WORLD_COLS] = BASE
 
-    def update(self, irSensorList, robot):
-        r, c = robot.pos
-        deltas = [
-            (-1, 0),  # UP
-            (-1, 1),  # UPR
-            (0, 1),   # R
-            (1, 1),   # DOWNR
-            (1, 0),   # DOWN
-            (1, -1),  # DOWNL
-            (0, -1),  # L
-            (-1, -1)  # UPL
-        ]
-        for i in range(8):
-            value = irSensorList[i].getValue()
-            # Determinar a tolerancia en función de se é un sensor recto ou en diagonal
-            tol = DETECT_TOL_DIAGONAL if i % 2 != 0 else DETECT_TOL_STRAIGHT
-            
-            if value > tol:
-                direction = (i + robot.orientation) % 8
-                dr, dc = deltas[direction]
-                nr = r + dr  # Posición na que está o muro como a posición do robot + o incremento correspondente á dirección do sensor
-                nc = c + dc
-                if 0 <= nr < WORLD_ROWS * 2 - 1 and 0 <= nc < WORLD_COLS * 2 - 1:
-                    # Sobrescribimos a WALL SOLO si esa celda aún era UNEXPLORED
-                    if self.map[nr, nc] == UNEXPLORED:
-                        self.map[nr, nc] = WALL
-    
+    def update(self, robot):
+        self.print_map()
+        r, c = robot.get_position()
+        walls = robot.scan_surroundings()
+        for abs_dir, is_wall in enumerate(walls):
+            dr, dc = DIRECTION_DELTAS[abs_dir]
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < MAP_ROWS and 0 <= nc < MAP_COLS:
+                if is_wall:
+                    self.map[nr, nc] = WALL
+                else:
+                    dist = abs(nr - WORLD_ROWS) + abs(nc - WORLD_COLS)
+                    self.map[nr, nc] = BASE if dist == 0 else dist
+
     def mark_explored(self, pos):
-        dist = abs(pos[0] - WORLD_ROWS) + abs(pos[1] - WORLD_COLS)
-        # Siempre forzamos a sobreescribir la celda con su distancia al explorarla (esto elimina los "muros fantasma" falsos)
-        self.map[pos[0], pos[1]] = dist
-    
+        r, c = pos
+        dist = abs(r - WORLD_ROWS) + abs(c - WORLD_COLS)
+        self.map[r, c] = BASE if dist == 0 else dist
+
     def getmap(self):
         return self.map
-        
+
     def print_map(self):
-        print("\n--- FINAL MAP ---")
-        for r in range(WORLD_ROWS*2-1):
+        print("\n--- MAP - Status ---")
+        for r in range(MAP_ROWS):
             row_str = ""
-            for c in range(WORLD_COLS*2-1):
+            for c in range(MAP_COLS):
                 val = self.map[r, c]
                 if val == WALL:
                     row_str += " W "
@@ -378,44 +351,19 @@ class Map:
                 elif val == BASE:
                     row_str += " B "
                 else:
-                    # Formatear el número para que ocupe 2 espacios y sea legible
                     row_str += f"{int(val):2d} "
             print(row_str)
         print("-----------------\n")
 
 if __name__ == "__main__":
 
-    #Inializacion dos parametros do robot KeperaIV en webbots e toma de variables
-    kepir, lWheel, rWheel, irSensorList, leftWheelPos, rightWheelPos, camera = initialization()
-
-    #Inializacion de los modulos de comportamiento del robot.
-    robot = RobotAPI(kepir, lWheel, rWheel, leftWheelPos, rightWheelPos)
+    robot = RobotAPI()
     controller = Controller()
     director = Director()
-    map = Map()
+    map_obj = Map()
 
-    # Loop infinito sincronizado con Webots
-    has_left_base = False
-    returned_to_base = False
-    while kepir.step(TIME_STEP) != -1:
-        # Print raw sensor values rounded for easier reading
-        raw_sensors = [round(sensor.getValue(), 2) for sensor in irSensorList]
-        print(f"Raw Sensors (0-7): {raw_sensors}")
-        
-        map.update(irSensorList, robot)
-        
-        if robot.pos != (WORLD_ROWS, WORLD_COLS):
-            has_left_base = True
-        
-        # Check if robot returned to base after moving
-        if robot.pos == (WORLD_ROWS, WORLD_COLS) and has_left_base and not returned_to_base:
-            print("Robot returned to base!")
-            map.print_map()
-            returned_to_base = True
-            # Optional: break the loop or continue if desired
-            # break
-        
-        # Decidir accion a tomar
-        director.plan_action(robot=robot, map=map, controller=controller)
-        # Ejecutar la accion
-        controller.act(robot=robot, map=map)
+    while robot.step() != -1:
+        map_obj.update(robot)
+        director.plan_action(robot=robot, map_obj=map_obj, controller=controller)
+        controller.act(robot=robot)
+        map_obj.mark_explored(robot.get_position())
