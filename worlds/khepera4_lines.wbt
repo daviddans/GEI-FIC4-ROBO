@@ -1,0 +1,53 @@
+#VRML_SIM R2022a utf8
+WorldInfo {
+  info [
+    "A Mindstorms robot following a line drawn on a textured object"
+  ]
+  title "Rover"
+  coordinateSystem "NUE"
+}
+Viewpoint {
+  orientation -0.7725736558057464 0.6187243134591991 0.14251375473752198 2.2971954433599957
+  position -0.8809887090749522 2.737253996364905 3.518635750217405
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  rotation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0943951023931957
+  floorTileSize 1 1
+  floorAppearance PBRAppearance {
+    baseColorMap ImageTexture {
+      url [
+        "textures/line.png"
+      ]
+    }
+    roughness 1
+    metalness 0
+  }
+  wallHeight 0.06
+}
+Solid {
+  translation 0.609171 0.05 0.0620017
+  children [
+    Shape {
+      appearance DEF SURROUNDING_WALL_APPEARANCE PBRAppearance {
+        baseColor 1 0.1 0.3
+        roughness 1
+        metalness 0
+      }
+      geometry DEF OBSTACLE Box {
+        size 0.1 0.1 0.1
+      }
+    }
+  ]
+  boundingObject USE OBSTACLE
+}
+Khepera4 {
+  hidden position_0_0 6.317768530881575e-10
+  hidden position_0_1 -2.867521193369713e-11
+  hidden rotation_1 0.5773502690680163 -0.5773502690680163 -0.5773502694328447 2.0943949996351723
+  translation -0.17750746382723112 -0.00016068359872552576 0.007012661313492222
+  rotation -0.9999983239644321 0.0012940515084668193 0.001295183006559805 1.570798334104995
+}

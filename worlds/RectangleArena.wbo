@@ -1,0 +1,15 @@
+#VRML_OBJ R2022a utf8
+RectangleArena {
+  rotation -0.5773502691896258 0.5773502691896258 0.5773502691896258 2.0943951023931957
+  floorTileSize 1 1
+  floorAppearance PBRAppearance {
+    baseColorMap ImageTexture {
+      url [
+        "textures/line.png"
+      ]
+    }
+    roughness 1
+    metalness 0
+  }
+  wallHeight 0.06
+}

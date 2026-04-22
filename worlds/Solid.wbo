@@ -1,0 +1,17 @@
+#VRML_OBJ R2022a utf8
+Solid {
+  translation 0.609171 0.05 0.0620017
+  children [
+    Shape {
+      appearance DEF SURROUNDING_WALL_APPEARANCE PBRAppearance {
+        baseColor 1 0.1 0.3
+        roughness 1
+        metalness 0
+      }
+      geometry DEF OBSTACLE Box {
+        size 0.1 0.1 0.1
+      }
+    }
+  ]
+  boundingObject USE OBSTACLE
+}

@@ -1,11 +1,4 @@
-#########################################################################################
-# Robótica: código de ejemplo para el simulador Webots
-# Grado en Ingeniería Informática
-# Universidade da Coruña
-# Author: Alejandro Paz
-#
-# Función de ejemplo para mover el robot Khepera IV por posición.
-#########################################################################################
+
 import time
 from controller import Robot, Supervisor # type: ignore
 from enum import Enum
@@ -13,6 +6,7 @@ import numpy as np  # Si queremos utilizar numpy para procesar la imagen.
 import cv2  # Si queremos utilizar OpenCV para procesar la imagen.
 import math
 from collections import deque
+import heapq
 
 WHEEL_RADIUS = 21  # Radius in mm
 WHEEL_SPACE = 108.29  # Space between wheels (specs:105.4mm, corrected:108.29mm)
@@ -24,6 +18,7 @@ CRUISE_SPEED = 8
 # Time step por defecto para el controlador.
 TIME_STEP = 32
 DISTANCIA_CUADRADICULA = 250/WHEEL_RADIUS
+DISTANCIA_DIAGONAL = (250 * math.sqrt(2)) / WHEEL_RADIUS
 
 #CONSTANTES
 #mapa
@@ -45,18 +40,18 @@ L = 6
 UPL = 7
 
 #Tolerancia de deteccion IR
-DETECT_TOL_STRAIGHT = 150 # Para sensores frontais, traseiros e laterais (0, 2, 4, 6)
-DETECT_TOL_DIAGONAL = 140  # Para sensores nas esquinas (1, 3, 5, 7)
+DETECT_TOL_STRAIGHT = 189 # Para sensores frontais, traseiros e laterais (0, 2, 4, 6)
+DETECT_TOL_DIAGONAL = 167  # Para sensores nas esquinas (1, 3, 5, 7)
 
 #Tolerancia de movimiento (encoder, rad)
-MOVE_TOLERANCE = 0.02
+MOVE_TOLERANCE = 0.01
 
 
 #Deteccion de intruso (camara)
-YELLOW_R_MIN = 200
-YELLOW_G_MIN = 200
-YELLOW_B_MAX = 50
-YELLOW_MIN_PIXELS = 5
+YELLOW_R_MIN = 180
+YELLOW_G_MIN = 180
+YELLOW_B_MAX = 80
+YELLOW_MIN_PIXELS = 50
 
 MAP_ROWS = WORLD_ROWS * 2 + 1  # 25 — simétrico: 12 pasos en cada dirección desde base
 MAP_COLS = WORLD_COLS * 2 + 1  # 25
@@ -113,7 +108,7 @@ class RobotAPI():
             self.irSensorList.append(sensor)
 
         self.camera = self.webots_robot.getDevice("camera")
-        self.camera.enable(TIME_STEP * 10)
+        self.camera.enable(TIME_STEP)
 
         self.webots_robot.step(TIME_STEP)
 
@@ -159,23 +154,43 @@ class RobotAPI():
                 break
             if self.webots_robot.step(TIME_STEP) == -1:
                 break
+        self.webots_robot.step(TIME_STEP)  # settling: let residual angular velocity decay
         # 6. Actualizar orientación
         self.orientation = target_orientation
 
     def _detect_yellow(self):
-        image = self.camera.getImage()
+        # 1. Obtener la imagen
+        image_data = self.camera.getImage()
+        if not image_data:
+            return False
+
+        # 2. Convertir a array de NumPy (Webots usa BGRA)
         W = self.camera.getWidth()
         H = self.camera.getHeight()
-        count = 0
-        for x in range(W):
-            for y in range(H):
-                r = self.camera.imageGetRed(image, W, x, y)
-                g = self.camera.imageGetGreen(image, W, x, y)
-                b = self.camera.imageGetBlue(image, W, x, y)
-                if r > YELLOW_R_MIN and g > YELLOW_G_MIN and b < YELLOW_B_MAX:
-                    count += 1
-                    if count >= YELLOW_MIN_PIXELS:
-                        return True
+        
+        # Creamos una matriz desde el buffer de la cámara
+        img = np.frombuffer(image_data, np.uint8).reshape((H, W, 4))
+
+        # 3. Extraer canales (Recordar: Webots entrega BGRA)
+        # img[:,:,0] -> Blue
+        # img[:,:,1] -> Green
+        # img[:,:,2] -> Red
+        
+        r = img[:, :, 2]
+        g = img[:, :, 1]
+        b = img[:, :, 0]
+
+        # 4. Aplicar la máscara (Tus constantes de color)
+        # Buscamos donde R y G son altos y B es bajo
+        mask = (r > YELLOW_R_MIN) & (g > YELLOW_G_MIN) & (b < YELLOW_B_MAX)
+
+        # 5. Contar píxeles amarillos
+        count = np.sum(mask)
+        
+        if count >= YELLOW_MIN_PIXELS:
+            print(f"[CAM] ¡Intruso detectado! Píxeles: {count}")
+            return True
+            
         return False
 
     def detect_intruder(self):
@@ -209,6 +224,21 @@ class RobotAPI():
     def turn_right90(self):
         self._turn((self.orientation + 2) % 8)
 
+    def turn_to(self, target_orientation):
+        if target_orientation != self.orientation:
+            self._turn(target_orientation)
+
+    def turn_left45(self):
+        self._turn((self.orientation - 1) % 8)
+
+    def turn_right45(self):
+        self._turn((self.orientation + 1) % 8)
+
+    def move_forward_diagonal(self):
+        self._move_distance(DISTANCIA_DIAGONAL)
+        dr, dc = DIRECTION_DELTAS[self.orientation]
+        self.pos = (self.pos[0] + dr, self.pos[1] + dc)
+
 
 #Modulos de comportamiento.
 # Clase que decide la siguiente accion del robot.
@@ -216,6 +246,7 @@ class Director:
     def __init__(self):
         self.mode = 'explore'
         self.has_left_base = False
+        self._return_planned = False
 
     def plan_action(self, robot, map_obj, controller):
         if robot.get_position() != (WORLD_ROWS, WORLD_COLS):
@@ -225,7 +256,9 @@ class Director:
 
         if self.mode == 'explore':
             if self.has_left_base and robot.get_position() == (WORLD_ROWS, WORLD_COLS):
-                print("Exploration complete. Switching to patrol.")
+                print("=" * 40)
+                print("EXPLORATION COMPLETE — entering PATROL mode")
+                print("=" * 40)
                 self.mode = 'patrol'
             else:
                 self._plan_explore(robot, map_obj, controller)
@@ -233,6 +266,8 @@ class Director:
             self._plan_patrol(robot, map_obj, controller)
         elif self.mode == 'return':
             self._plan_return(robot, map_obj, controller)
+        elif self.mode == 'stop':
+            return
 
     def _plan_explore(self, robot, map_obj, controller):
         r, c = robot.get_position()
@@ -263,14 +298,95 @@ class Director:
         controller.add_action(target)
 
     def _plan_patrol(self, robot, map_obj, controller):
-        if robot.detect_intruder():
-            print("Intruder detected! Returning to base.")
-            self.mode = 'return'
-        else:
-            self._plan_explore(robot, map_obj, controller)
+            # Hacemos que el robot se detenga un momento para "mirar" bien
+            # o simplemente chequeamos la cámara.
+            print("[CHECKING] Buscando intrusos...")
+            if robot.detect_intruder():
+                print("=" * 40)
+                print("!!! INTRUSO DETECTADO !!!")
+                print("=" * 40)
+                self.mode = 'return'
+                self._return_planned = False
+            else:
+                # Si no hay intruso, sigue explorando normalmente
+                self._plan_explore(robot, map_obj, controller)
 
     def _plan_return(self, robot, map_obj, controller):
-        pass  # A* pendiente
+        if robot.get_position() == (WORLD_ROWS, WORLD_COLS):
+            print("[RETURN] Arrived at base! Stopping...")
+            self.mode = 'stop'
+            self._return_planned = False
+            return
+
+        # Calcular el camino y encolar SOLO el primer paso.
+        # De esta forma repensamos la ruta a cada casilla por si el mapa se actualiza
+        # o necesitamos corregir, en lugar de hacerlo a ciegas.
+        path = self._astar(robot.get_position(), map_obj)
+        if path:
+            # print(f"[RETURN] Path found: {len(path)} steps. Next dir: {path[0]}")
+            controller.queue.clear() # Vaciamos por si acaso
+            controller.add_action(path[0])
+        else:
+            print("[RETURN] No path found to base!")
+
+    def _astar(self, start, map_obj):
+        """A* from start to BASE (WORLD_ROWS, WORLD_COLS). Returns list of absolute directions."""
+        goal = (WORLD_ROWS, WORLD_COLS)
+        grid = map_obj.getmap()
+
+        def h(pos):
+            return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+        DIRS = [UP, R, DOWN, L]
+        counter = 0
+        # Estado: (f_score, counter, g_score, pos, path_dirs, prev_dir)
+        open_set = [(h(start), counter, 0.0, start, [], None)]
+        
+        # Diccionario para guardar el menor costo a cada estado (posición, direccion).
+        # Agregamos la dirección porque girar ahora tiene penalización.
+        visited = {}
+
+        while open_set:
+            _, _, g, pos, path, prev_dir = heapq.heappop(open_set)
+
+            state_key = (pos, prev_dir)
+            if state_key in visited and visited[state_key] <= g:
+                continue
+            visited[state_key] = g
+
+            if pos == goal:
+                return path
+
+            r, c = pos
+            for abs_dir in DIRS:
+                dr, dc = DIRECTION_DELTAS[abs_dir]
+                nr, nc = r + dr, c + dc
+                next_pos = (nr, nc)
+
+                if not (0 <= nr < MAP_ROWS and 0 <= nc < MAP_COLS):
+                    continue
+                if grid[nr, nc] == WALL or grid[nr, nc] == UNEXPLORED:
+                    continue
+
+                # CRÍTICO: Penalización por giro.
+                # A* estándar en cuadrículas crea rutas "zig-zag" (escalera) porque miden lo mismo,
+                # pero en robótica física las rotaciones acumulan errores y destrozan el rastro ("drift").
+                # Obligamos a que prefiera siempre líneas rectas (0 zig-zag).
+                turn_penalty = 0.0
+                if prev_dir is not None and prev_dir != abs_dir:
+                    turn_penalty = 0.5 
+
+                step_cost = 1.0 + turn_penalty
+                new_g = g + step_cost
+                
+                next_state_key = (next_pos, abs_dir)
+                if next_state_key in visited and visited[next_state_key] <= new_g:
+                    continue
+
+                counter += 1
+                heapq.heappush(open_set, (new_g + h(next_pos), counter, new_g, next_pos, path + [abs_dir], abs_dir))
+
+        return None
 
 
 # Clase que se encarga de controlar el movimiento del robot.
@@ -292,22 +408,20 @@ class Controller:
             self.status = 'idle'
             return
 
-        while self.queue:
-            abs_direction = self.queue.popleft()
-
-            diff = (abs_direction - robot.get_orientation()) % 8
-            if diff == 2:
-                robot.turn_right90()
-            elif diff == 4:
-                robot.turn_right90()
-                robot.turn_right90()
-            elif diff == 6:
-                robot.turn_left90()
-
-            print(f"Moving toward abs dir: {abs_direction}, orient: {robot.get_orientation()}")
+        # Extraemos y ejecutamos SOLO el primer paso de la cola,
+        # dejando que el bucle principal retome el control y actualice los sensores.
+        abs_direction = self.queue.popleft()
+        robot.turn_to(abs_direction)
+        if abs_direction % 2 != 0:
+            robot.move_forward_diagonal()
+        else:
             robot.move_forward()
+        print(f"[ACT] dir={abs_direction} pos={robot.get_position()}")
 
-        self.status = 'success'
+        if not self.queue:
+            self.status = 'success'
+        else:
+            self.status = 'running'
 
 
 # Clase que se encarga de generar el mapa en memoría y actualizarlo.
@@ -317,8 +431,9 @@ class Map:
         self.map[WORLD_ROWS, WORLD_COLS] = BASE
 
     def update(self, robot):
-        self.print_map()
         r, c = robot.get_position()
+        dist = abs(r - WORLD_ROWS) + abs(c - WORLD_COLS)
+        self.map[r, c] = BASE if dist == 0 else dist
         walls = robot.scan_surroundings()
         for abs_dir, is_wall in enumerate(walls):
             dr, dc = DIRECTION_DELTAS[abs_dir]
@@ -329,11 +444,7 @@ class Map:
                 else:
                     dist = abs(nr - WORLD_ROWS) + abs(nc - WORLD_COLS)
                     self.map[nr, nc] = BASE if dist == 0 else dist
-
-    def mark_explored(self, pos):
-        r, c = pos
-        dist = abs(r - WORLD_ROWS) + abs(c - WORLD_COLS)
-        self.map[r, c] = BASE if dist == 0 else dist
+        self.print_map()
 
     def getmap(self):
         return self.map
@@ -366,4 +477,3 @@ if __name__ == "__main__":
         map_obj.update(robot)
         director.plan_action(robot=robot, map_obj=map_obj, controller=controller)
         controller.act(robot=robot)
-        map_obj.mark_explored(robot.get_position())
