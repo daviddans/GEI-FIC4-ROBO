@@ -124,17 +124,17 @@ def get_state(g):
 def compute_reward(prev_g, curr_g):
     total = 0.0
     for i in range(4):
-        was_on_line = prev_g[i] > WHITE_THR  # > 750 = on black line
-        is_on_line = curr_g[i] > WHITE_THR
+        was_black = prev_g[i] < BLACK_THR
+        is_black = curr_g[i] < BLACK_THR
         w = REWARD_WEIGHTS[i]
-        if is_on_line and not was_on_line:
-            total += w  # Went from off-line to on-line: positive
-        elif not is_on_line and was_on_line:
-            total -= w  # Went from on-line to off-line: negative
-        elif is_on_line and was_on_line:
-            total += 0.5 * w  # Stayed on-line: small positive
+        if is_black and not was_black:
+            total += w
+        elif not is_black and was_black:
+            total -= w
+        elif is_black and was_black:
+            total += 0.5 * w
         else:
-            total -= 0.5 * w  # Stayed off-line: small negative
+            total -= 0.5 * w
     return float(total)
 
 
@@ -167,13 +167,30 @@ class QLearner:
 
 
 def avoid_obstacles(robot):
-    if robot.read_front_proximity() < OBSTACLE_THR:
+    proximity = robot.read_front_proximity()
+    if proximity < OBSTACLE_THR:
         return False
-    print("[AVOID] Obstáculo detectado, girando derecha hasta despejar")
-    robot.set_motors(+TURN_SPEED, -TURN_SPEED)
-    while robot.read_front_proximity() >= OBSTACLE_THR:
+    
+    print(f"[AVOID] Obstáculo detectado (prox={proximity:.0f}), retrocediendo y girando...")
+    
+    # Retroceder primero para alejarse del obstáculo
+    robot.set_motors(-CRUISE_SPEED, -CRUISE_SPEED)
+    for _ in range(5):
         if robot.step() == -1:
             return True
+    
+    # Luego girar a la derecha hasta que el camino esté libre
+    robot.set_motors(+TURN_SPEED, -TURN_SPEED)
+    max_steps = 100  # Safety timeout: ~3.2 segundos de giro
+    steps_spun = 0
+    while robot.read_front_proximity() >= OBSTACLE_THR and steps_spun < max_steps:
+        if robot.step() == -1:
+            return True
+        steps_spun += 1
+    
+    if steps_spun >= max_steps:
+        print("[AVOID] ⚠ Timeout: no se pudo despejar el obstáculo tras girar 100 pasos")
+    
     robot.stop()
     return True
 
