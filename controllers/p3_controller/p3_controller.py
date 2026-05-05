@@ -124,17 +124,17 @@ def get_state(g):
 def compute_reward(prev_g, curr_g):
     total = 0.0
     for i in range(4):
-        was_black = prev_g[i] < BLACK_THR
-        is_black = curr_g[i] < BLACK_THR
+        was_on_line = prev_g[i] > WHITE_THR  # > 750 = on black line
+        is_on_line = curr_g[i] > WHITE_THR
         w = REWARD_WEIGHTS[i]
-        if is_black and not was_black:
-            total += w
-        elif not is_black and was_black:
-            total -= w
-        elif is_black and was_black:
-            total += 0.5 * w
+        if is_on_line and not was_on_line:
+            total += w  # Went from off-line to on-line: positive
+        elif not is_on_line and was_on_line:
+            total -= w  # Went from on-line to off-line: negative
+        elif is_on_line and was_on_line:
+            total += 0.5 * w  # Stayed on-line: small positive
         else:
-            total -= 0.5 * w
+            total -= 0.5 * w  # Stayed off-line: small negative
     return float(total)
 
 
