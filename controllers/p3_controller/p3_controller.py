@@ -17,7 +17,7 @@ from controller import Robot  # type: ignore
 TIME_STEP = 32
 MAX_SPEED = 47.6
 CRUISE_SPEED = 4.0
-TURN_SPEED = 2.0
+CURVE_INNER = 1.0   # velocidad de la rueda interior en curva (siempre > 0)
 ACTION_STEPS = 10
 
 # Umbrales del enunciado
@@ -100,9 +100,9 @@ class RobotAPI:
         if action_id == A_FORWARD:
             self.set_motors(+CRUISE_SPEED, +CRUISE_SPEED)
         elif action_id == A_RIGHT:
-            self.set_motors(+TURN_SPEED, -TURN_SPEED)
+            self.set_motors(+CRUISE_SPEED, +CURVE_INNER)
         elif action_id == A_LEFT:
-            self.set_motors(-TURN_SPEED, +TURN_SPEED)
+            self.set_motors(+CURVE_INNER, +CRUISE_SPEED)
         else:
             self.stop()
 
@@ -170,7 +170,7 @@ def avoid_obstacles(robot):
     if robot.read_front_proximity() < OBSTACLE_THR:
         return False
     print("[AVOID] Obstáculo detectado, girando derecha hasta despejar")
-    robot.set_motors(+TURN_SPEED, -TURN_SPEED)
+    robot.set_motors(+2.0, -2.0)   # giro in-place sólo para evitación de obstáculos
     while robot.read_front_proximity() >= OBSTACLE_THR:
         if robot.step() == -1:
             return True
