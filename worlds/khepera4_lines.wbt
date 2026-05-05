@@ -1,4 +1,10 @@
-#VRML_SIM R2022a utf8
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/k-team/khepera4/protos/Khepera4.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+
 WorldInfo {
   info [
     "A Mindstorms robot following a line drawn on a textured object"
@@ -7,8 +13,8 @@ WorldInfo {
   coordinateSystem "NUE"
 }
 Viewpoint {
-  orientation -0.7725736558057464 0.6187243134591991 0.14251375473752198 2.2971954433599957
-  position -0.8809887090749522 2.737253996364905 3.518635750217405
+  orientation -0.7775828343761019 0.6119649801137609 0.14444306420867695 2.267965181617225
+  position -0.6806007378904124 2.1264590888071697 2.1713864065123976
 }
 TexturedBackground {
 }
@@ -29,7 +35,7 @@ RectangleArena {
   wallHeight 0.06
 }
 Solid {
-  translation 0.609171 0.05 0.0620017
+  translation -0.160829 0.05 0.0620017
   children [
     Shape {
       appearance DEF SURROUNDING_WALL_APPEARANCE PBRAppearance {
@@ -45,9 +51,17 @@ Solid {
   boundingObject USE OBSTACLE
 }
 Khepera4 {
-  hidden position_0_0 6.317768530881575e-10
-  hidden position_0_1 -2.867521193369713e-11
-  hidden rotation_1 0.5773502690680163 -0.5773502690680163 -0.5773502694328447 2.0943949996351723
-  translation -0.17750746382723112 -0.00016068359872552576 0.007012661313492222
-  rotation -0.9999983239644321 0.0012940515084668193 0.001295183006559805 1.570798334104995
+  controller "p3_controller"
+  hidden position_0_0 32984.899180419336
+  hidden position_0_1 25548.172978328508
+  hidden linearVelocity_0 0.17417056585873525 1.5853969708444302e-07 0.05251388143059222
+  hidden angularVelocity_0 5.20980506454539e-05 0.1761966254504469 -0.0003989413011904608
+  hidden rotation_1 0.7042672792282167 -0.7042673261547631 0.08952727360589997 3.32017103419766
+  hidden linearVelocity_1 0.1652613268307542 -3.166051443663399e-06 0.04988164703400066
+  hidden angularVelocity_1 2.3786653351275233 0.16727280102325043 -7.882278313732975
+  hidden rotation_2 0.37367573658944997 -0.3736757084921995 -0.848959898209088 1.733812726471188
+  hidden linearVelocity_2 0.1830743259773126 3.4863267946422297e-06 0.05514548854045791
+  hidden angularVelocity_2 2.632527462604731 0.1691582402323088 -8.73056937737397
+  translation 0.07884352048430635 -0.0001604895660640808 -0.324318620855093
+  rotation 0.9798655598485285 0.14117527696438106 0.14118436810341295 -1.5911403113382816
 }
