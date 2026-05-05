@@ -51,7 +51,7 @@ A_RIGHT, A_LEFT, A_FORWARD = 0, 1, 2
 N_STATES, N_ACTIONS = 3, 3
 
 # Pesos de la recompensa por sensor (centrales pesan más)
-REWARD_WEIGHTS = np.array([1.0, 3.0, 3.0, 1.0])
+REWARD_WEIGHTS = np.array([1.0, 2.0, 2.0, 1.0])
 
 
 class RobotAPI:
