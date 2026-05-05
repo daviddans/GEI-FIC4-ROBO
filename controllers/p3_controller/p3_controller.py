@@ -17,6 +17,7 @@ from controller import Robot  # type: ignore
 TIME_STEP = 32
 MAX_SPEED = 47.6
 CRUISE_SPEED = 4.0
+TURN_SPEED = 2.0
 CURVE_INNER = 1.0   # velocidad de la rueda interior en curva (siempre > 0)
 ACTION_STEPS = 10
 
@@ -50,7 +51,7 @@ A_RIGHT, A_LEFT, A_FORWARD = 0, 1, 2
 N_STATES, N_ACTIONS = 3, 3
 
 # Pesos de la recompensa por sensor (centrales pesan más)
-REWARD_WEIGHTS = np.array([1.0, 2.0, 2.0, 1.0])
+REWARD_WEIGHTS = np.array([1.0, 3.0, 3.0, 1.0])
 
 
 class RobotAPI:
@@ -170,18 +171,15 @@ def avoid_obstacles(robot):
     proximity = robot.read_front_proximity()
     if proximity < OBSTACLE_THR:
         return False
-    print("[AVOID] Obstáculo detectado, girando derecha hasta despejar")
-    robot.set_motors(+2.0, -2.0)   # giro in-place sólo para evitación de obstáculos
-    while robot.read_front_proximity() >= OBSTACLE_THR:
-    
+
     print(f"[AVOID] Obstáculo detectado (prox={proximity:.0f}), retrocediendo y girando...")
-    
+
     # Retroceder primero para alejarse del obstáculo
     robot.set_motors(-CRUISE_SPEED, -CRUISE_SPEED)
     for _ in range(5):
         if robot.step() == -1:
             return True
-    
+
     # Luego girar a la derecha hasta que el camino esté libre
     robot.set_motors(+TURN_SPEED, -TURN_SPEED)
     max_steps = 100  # Safety timeout: ~3.2 segundos de giro
@@ -190,10 +188,10 @@ def avoid_obstacles(robot):
         if robot.step() == -1:
             return True
         steps_spun += 1
-    
+
     if steps_spun >= max_steps:
         print("[AVOID] ⚠ Timeout: no se pudo despejar el obstáculo tras girar 100 pasos")
-    
+
     robot.stop()
     return True
 
