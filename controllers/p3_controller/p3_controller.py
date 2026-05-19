@@ -15,19 +15,20 @@ from controller import Robot  # type: ignore
 
 # --- Simulación y movimiento ---
 TIME_STEP = 32             # periodo de simulación en ms (un robot.step(TIME_STEP) = 32 ms)
-MAX_SPEED = 50             
-CRUISE_SPEED = 14         # velocidad de la rueda exterior en cualquier acción (rad/s)
-CURVE_INNER = 1.0          # velocidad de la rueda interior en giros (rad/s)
-ACTION_STEPS_FWD = 15     # nº de ticks que dura A_FORWARD
-ACTION_STEPS_TURN = 6      # nº de ticks que dura A_RIGHT/A_LEFT
+MAX_SPEED = 30            # velocidad máxima de las ruedas (rad/s)          
+CRUISE_SPEED = 12   # velocidad de la rueda exterior en cualquier acción (rad/s)
+CURVE_INNER = 4.0          # velocidad de la rueda interior en giros (rad/s)
+ACTION_STEPS_FWD = 8   # nº de ticks que dura A_FORWARD
+ACTION_STEPS_TURN = 4   # nº de ticks que dura A_RIGHT/A_LEFT
 
 BLACK_THR = 500            # < BLACK_THR  → sensor sobre negro (sobre la línea)
 WHITE_THR = 750            # > WHITE_THR  → sensor sobre blanco (fuera de la línea)
 
-OBSTACLE_THR_CENTER = 300  
-OBSTACLE_THR_SIDE = 550    
-AVOID_TURN_SPEED = 25.0    
-AVOID_TURN_DEG = 45     
+OBSTACLE_THR_CENTER = 200
+OBSTACLE_THR_SIDE = 480
+AVOID_TURN_SPEED = 25.0
+AVOID_TURN_DEG_CENTER = 180    # giro cuando dispara el sensor central (obstáculo de frente)
+AVOID_TURN_DEG_SIDE = 60      # giro cuando disparan los laterales (roce inminente)
 
 # --- Geometría del Khepera IV (para convertir ángulo robot a rotación de rueda) ---
 WHEEL_RADIUS = 0.021      
@@ -145,7 +146,7 @@ def compute_reward(prev_g, curr_g):
         is_black = curr_g[i] < BLACK_THR
         w = REWARD_WEIGHTS[i]
         if is_black and not was_black:
-            total += w
+            total += 0.75 *w
         elif not is_black and was_black:
             total -= w
         elif is_black and was_black:
@@ -156,7 +157,7 @@ def compute_reward(prev_g, curr_g):
     if np.all(curr_g < BLACK_THR):
         total += BONUS_FULL
     elif np.all(curr_g > WHITE_THR):
-        total -= 1.5 * BONUS_FULL
+        total -= BONUS_FULL
 
     return float(total)
 
@@ -213,9 +214,10 @@ def avoid_obstacles():
     sign = +1 if front_l >= front_r else -1
     direction_str = "derecha" if sign > 0 else "izquierda"
     trigger = "central" if center_hit else "lateral"
-    print(f"[AVOID] FL/F/FR={front_l:.0f}/{front_c:.0f}/{front_r:.0f} ({trigger}) -> giro {AVOID_TURN_DEG}° {direction_str}")
+    deg = AVOID_TURN_DEG_CENTER if center_hit else AVOID_TURN_DEG_SIDE
+    print(f"[AVOID] FL/F/FR={front_l:.0f}/{front_c:.0f}/{front_r:.0f} ({trigger}) -> giro {deg}° {direction_str}")
 
-    turn_in_place(AVOID_TURN_DEG, sign)
+    turn_in_place(deg, sign)
     return True
 
 
