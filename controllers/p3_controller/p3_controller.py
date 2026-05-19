@@ -16,12 +16,11 @@ from controller import Robot  # type: ignore
 # --- Simulación y movimiento ---
 TIME_STEP = 32             # periodo de simulación en ms (un robot.step(TIME_STEP) = 32 ms)
 MAX_SPEED = 50             # tope de seguridad (rad/s) aplicado en set_motors() como clamp
-CRUISE_SPEED = 8          # velocidad de la rueda exterior en cualquier acción (rad/s)
-CURVE_INNER = 4.0          # velocidad de la rueda interior en giros (rad/s); junto a
-                           # CRUISE_SPEED define el radio del arco. Ratio actual 10:4 =
-                           # 2.5:1 → ~13° de rotación y ~2.8 cm de avance por acción de giro.
-ACTION_STEPS_FWD = 10      # nº de ticks que dura A_FORWARD → 10·32 ms ≈ 320 ms de avance
-ACTION_STEPS_TURN = 6      # nº de ticks que dura A_RIGHT/A_LEFT → 6·32 ms ≈ 192 ms de giro.
+CRUISE_SPEED = 14        # velocidad de la rueda exterior en cualquier acción (rad/s)
+CURVE_INNER = 1.0          # velocidad de la rueda interior en giros (rad/s); junto a
+                           # CRUISE_SPEED define el radio del arco.
+ACTION_STEPS_FWD = 15    # nº de ticks que dura A_FORWARD 
+ACTION_STEPS_TURN = 8      # nº de ticks que dura A_RIGHT/A_LEFT
                            # Asimétrico para que FORWARD recorra más línea por iteración y
                            # el Q-learning prefiera el recto frente a "girar en el sitio".
 
@@ -38,12 +37,12 @@ WHITE_THR = 750            # > WHITE_THR  → sensor sobre blanco (fuera de la l
 #                     real → umbral BAJO para detectar a distancia.
 #   - Laterales (FL, FR): apuntan ~45° a los lados. Detectan paredes en paralelo
 #                     que no implican colisión → umbral ALTO, sólo cuasi-contacto.
-OBSTACLE_THR_CENTER = 150  # dispara la maniobra si front-center ≥ 150 (detección anticipada)
+OBSTACLE_THR_CENTER = 300  # dispara la maniobra si front-center ≥ 150 (detección anticipada)
 OBSTACLE_THR_SIDE = 550    # dispara si front-left o front-right ≥ 550 (colisión inminente)
-AVOID_TURN_SPEED = 14.0    # velocidad de las ruedas durante la maniobra (rad/s).
+AVOID_TURN_SPEED = 25.0    # velocidad de las ruedas durante la maniobra (rad/s).
                            # No afecta al ángulo (lo controla el encoder), sólo a cuán
                            # rápido se completa para reanudar la marcha antes.
-AVOID_TURN_DEG = 45        # rotación fija del robot por maniobra (grados, in-place)
+AVOID_TURN_DEG = 45      # rotación fija del robot por maniobra (grados, in-place)
 
 # --- Geometría del Khepera IV (para convertir ángulo robot ↔ rotación de rueda) ---
 WHEEL_RADIUS = 0.021       # radio de la rueda en metros
@@ -81,6 +80,11 @@ N_STATES, N_ACTIONS = 3, 3
 # Pesos de cada sensor de suelo en la recompensa. Los centrales (índices 1 y 2)
 # pesan el doble porque son los que indican que estamos correctamente sobre la línea.
 REWARD_WEIGHTS = np.array([1.0, 2.0, 2.0, 1.0])
+
+# Bonus/penalización extra en compute_reward cuando los 4 sensores coinciden:
+# +BONUS_FULL si todos están sobre negro (centrado sobre una línea ancha o cruce),
+# -BONUS_FULL si todos están sobre blanco (completamente fuera de la línea).
+BONUS_FULL = 3.0
 
 
 # --- Estado global del controlador (se inicializa en __main__) ---
@@ -189,21 +193,15 @@ def get_state(g):
 def compute_reward(prev_g, curr_g):
     """Recompensa derivada de la experiencia (no codificada a priori, por sensor).
 
-    Por cada uno de los 4 sensores de suelo, con peso w = REWARD_WEIGHTS[i]:
-        blanco → negro (gana línea):    +w
-        negro  → blanco (pierde línea): -w
-        negro  → negro (mantiene):     +0.5·w
-        blanco → blanco (sigue fuera): -0.5·w
-
     Los centrales (índices 1 y 2) pesan 2.0 y los laterales (0 y 3) pesan 1.0,
     así estar centrado sobre la línea recompensa más que rozarla con un lateral.
-
+    Bonus extra si los 4 sensores coinciden
     Args:
         prev_g: lecturas de suelo antes de la acción (np.ndarray[4]).
         curr_g: lecturas de suelo tras la acción     (np.ndarray[4]).
 
     Returns:
-        Suma de contribuciones de los 4 sensores (float).
+        Suma de contribuciones por sensor más el bonus extra (float).
     """
     total = 0.0
     for i in range(4):
@@ -215,9 +213,15 @@ def compute_reward(prev_g, curr_g):
         elif not is_black and was_black:
             total -= w
         elif is_black and was_black:
-            total += 0.5 * w
+            total += 2 * w
         else:
-            total -= 0.5 * w
+            total -= 2 * w
+
+    if np.all(curr_g < BLACK_THR):
+        total += BONUS_FULL
+    elif np.all(curr_g > WHITE_THR):
+        total -= 1.5 * BONUS_FULL
+
     return float(total)
 
 
