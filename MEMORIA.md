@@ -26,9 +26,9 @@ Mantener sólo tres estados deja una Q-table 3×3, lo que favorece una convergen
 
 Tres acciones en `run_action`: girar derecha (A1), girar izquierda (A2) y avanzar recto (A3). Dos decisiones de diseño marcan el comportamiento:
 
-**Giros como arcos dinámicos, no como pivotes.** Las primeras pruebas con giros estáticos (una rueda hacia adelante y la otra hacia atrás) permitían al robot quedarse en el sitio alternando estados y generando un bucle de recompensa que no nos acercaba al comportamiento deseado. Al añadir un parámetro para controlar la velocidad de la rueda interna (`CURVE_INNER = 4.0 rad/s` frente a `CRUISE_SPEED = 12 rad/s` en la exterior), creamos un movimiento de curva en lugar de un giro en el sitio.
+**Giros como arcos dinámicos, no como pivotes.** Las primeras pruebas con giros estáticos (una rueda hacia adelante y la otra hacia atrás) permitían al robot quedarse en el sitio alternando estados y generando un bucle de recompensa que no nos acercaba al comportamiento deseado. Al añadir un parámetro para controlar la velocidad de la rueda interna (`CURVE_INNER = 1 rad/s` frente a `CRUISE_SPEED = 15 rad/s` en la exterior), creamos un movimiento de curva en lugar de un giro en el sitio.
 
-**Duración asimétrica.** `ACTION_STEPS_FWD = 8` ticks para avanzar y `ACTION_STEPS_TURN = 4` ticks para girar. Una iteración de avance recorre el doble de simulación que una de giro, así la política aprendida favorece el recto cuando estamos en S3 y resulta poco rentable acumular giros consecutivos.
+**Duración asimétrica.** `ACTION_STEPS_FWD = 1` tick para avanzar y `ACTION_STEPS_TURN = 2` ticks para girar. La acción de giro dura más tiempo de simulación que el avance, favoreciendo correcciones rápidas cuando el robot se desvía.
 
 ---
 
@@ -38,10 +38,10 @@ El enunciado prohíbe codificar la recompensa a priori, por lo que `compute_rewa
 
 | Transición del sensor | Contribución |
 |-----------------------|--------------|
-| blanco → negro (gana línea) | +0.75·w |
-| negro → blanco (pierde línea) | −w |
-| negro → negro (mantiene línea) | +2·w |
-| blanco → blanco (sigue fuera) | −2·w |
+| blanco → negro (gana línea) | +0.5·w |
+| negro → blanco (pierde línea) | −0.75·w |
+| negro → negro (mantiene línea) | +1.25·w |
+| blanco → blanco (sigue fuera) | −w |
 
 Los pesos son `[1.0, 2.0, 2.0, 1.0]`: los centrales (1 y 2) pesan el doble, dando prioridad a estar centrado sobre la línea frente a sólo rozarla con un lateral.
 
@@ -50,7 +50,7 @@ Los pesos son `[1.0, 2.0, 2.0, 1.0]`: los centrales (1 y 2) pesan el doble, dand
 - Los **4** sensores en negro: **+BONUS_FULL** (totalmente centrado o sobre un cruce).
 - Los **4** sensores en blanco: **−BONUS_FULL** (totalmente fuera de la línea).
 
-Con `BONUS_FULL = 3.0`, este término amplifica las señales más informativas y permite a la Q-table distinguir, dentro de S3, entre "centrado" y "fuera del todo".
+Con `BONUS_FULL = 1.0`, este término amplifica las señales más informativas y permite a la Q-table distinguir, dentro de S3, entre "centrado" y "fuera del todo".
 
 ---
 
@@ -90,13 +90,13 @@ No se aprende: es un módulo reactivo (`avoid_obstacles`) sobre los 3 IR de prox
 
 | Sensor | Umbral | Justificación |
 |--------|--------|---------------|
-| Central (F) | `OBSTACLE_THR_CENTER = 200` | Bajo → detecta a distancia. Lo que está justo enfrente siempre es amenaza. |
-| Laterales (FL, FR) | `OBSTACLE_THR_SIDE = 480` | Alto → sólo cuasi-contacto. Una pared vista en paralelo no es colisión. |
+| Central (F) | `OBSTACLE_THR_CENTER = 250` | Bajo → detecta a distancia. Lo que está justo enfrente siempre es amenaza. |
+| Laterales (FL, FR) | `OBSTACLE_THR_SIDE = 500` | Alto → sólo cuasi-contacto. Una pared vista en paralelo no es colisión. |
 
 Cuando dispara la maniobra:
 
 1. **Sentido del giro.** Si FL ≥ FR, el obstáculo está más a la izquierda → giro a la derecha. En otro caso, a la izquierda. Siempre se gira hacia el lado más despejado.
-2. **Ángulo según fuente del disparo.** Central → **180°** (media vuelta, despeje total). Lateral → **60°** (corrección amplia). Si ambos disparan, prevalece el central.
+2. **Ángulo según fuente del disparo.** Central → **45°** (corrección amplia). Lateral → **10°** (corrección mínima). Si ambos disparan, prevalece el central.
 3. **Ejecución exacta.** `turn_in_place` mide la rotación con los encoders de las ruedas: para un giro in-place simétrico cada rueda recorre `Δφ = θ·(WHEELBASE/2) / WHEEL_RADIUS`. La velocidad `AVOID_TURN_SPEED = 25 rad/s` sólo influye en cuánto tarda, no en el ángulo final.
 
 Tras la maniobra se releen los sensores de suelo y el bucle Q-learning retoma el control desde el nuevo estado.
@@ -125,3 +125,6 @@ El controlador cumple los requisitos del enunciado: aprendizaje tabular con reco
 - **Duraciones asimétricas** entre avance y giro, que hacen del recto la opción más rentable en S3.
 - **Bonus de configuración completa** sobre los 4 sensores, para amplificar las señales más limpias y desambiguar S3.
 - **Umbrales y ángulos diferenciados** en la evitación (central anticipado a 180°, lateral inminente a 60°), que reducen falsos positivos al avanzar paralelo a paredes y dimensionan la respuesta al grado real de amenaza.
+
+Una pequeña anotación que nos gustaría realizar es que a la hora de desarrollar el algoritmo empleamos velocidades bajas de ~4rad/segundo. Durante una correción en clase se destaco que el robot se movia muy lento. 
+Al subir la velocidad el comportamiento del robot empeoro considerablemente y tuvimos que pasar un tiempo ajustanto parametros tanto de movimiento como de recompensa hasta que finalmente conseguimos un comportamiento estable a una velocidad de 15 rad/s. No obstante sigue siendo menos estable que la version anterior y hay que ejecutar la simulación una o dos veces hasta dar con una con el aprendizaje correcto.

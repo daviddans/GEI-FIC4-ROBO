@@ -15,20 +15,20 @@ from controller import Robot  # type: ignore
 
 # --- Simulación y movimiento ---
 TIME_STEP = 32             # periodo de simulación en ms (un robot.step(TIME_STEP) = 32 ms)
-MAX_SPEED = 30            # velocidad máxima de las ruedas (rad/s)          
-CRUISE_SPEED = 12   # velocidad de la rueda exterior en cualquier acción (rad/s)
-CURVE_INNER = 4.0          # velocidad de la rueda interior en giros (rad/s)
-ACTION_STEPS_FWD = 8   # nº de ticks que dura A_FORWARD
-ACTION_STEPS_TURN = 4   # nº de ticks que dura A_RIGHT/A_LEFT
+MAX_SPEED = 20          # velocidad máxima de las ruedas (rad/s)          
+CRUISE_SPEED = 15   # velocidad de la rueda exterior en cualquier acción (rad/s)
+CURVE_INNER = 1         # velocidad de la rueda interior en giros (rad/s)
+ACTION_STEPS_FWD = 1 # nº de ticks que dura A_FORWARD
+ACTION_STEPS_TURN = 2 # nº de ticks que dura A_RIGHT/A_LEFT
 
 BLACK_THR = 500            # < BLACK_THR  → sensor sobre negro (sobre la línea)
 WHITE_THR = 750            # > WHITE_THR  → sensor sobre blanco (fuera de la línea)
 
-OBSTACLE_THR_CENTER = 200
-OBSTACLE_THR_SIDE = 480
+OBSTACLE_THR_CENTER = 250
+OBSTACLE_THR_SIDE = 500
 AVOID_TURN_SPEED = 25.0
-AVOID_TURN_DEG_CENTER = 180    # giro cuando dispara el sensor central (obstáculo de frente)
-AVOID_TURN_DEG_SIDE = 60      # giro cuando disparan los laterales (roce inminente)
+AVOID_TURN_DEG_CENTER = 45    # giro cuando dispara el sensor central (obstáculo de frente)
+AVOID_TURN_DEG_SIDE = 10     # giro cuando disparan los laterales (roce inminente)
 
 # --- Geometría del Khepera IV (para convertir ángulo robot a rotación de rueda) ---
 WHEEL_RADIUS = 0.021      
@@ -64,7 +64,7 @@ REWARD_WEIGHTS = np.array([1.0, 2.0, 2.0, 1.0])
 # Bonus/penalización extra en compute_reward cuando los 4 sensores coinciden:
 # +BONUS_FULL si todos están sobre negro (centrado sobre una línea ancha o cruce),
 # -BONUS_FULL si todos están sobre blanco (completamente fuera de la línea).
-BONUS_FULL = 3.0
+BONUS_FULL = 1.0
 
 
 # --- Estado global del controlador (se inicializa en __main__) ---
@@ -146,13 +146,13 @@ def compute_reward(prev_g, curr_g):
         is_black = curr_g[i] < BLACK_THR
         w = REWARD_WEIGHTS[i]
         if is_black and not was_black:
-            total += 0.75 *w
+            total += 0.5 *w
         elif not is_black and was_black:
-            total -= w
+            total -= 0.75 * w
         elif is_black and was_black:
-            total += 2 * w
+            total += 1.25 * w
         else:
-            total -= 2 * w
+            total -=  w
 
     if np.all(curr_g < BLACK_THR):
         total += BONUS_FULL
